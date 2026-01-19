@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from urllib.parse import quote
 
 import httpx
 from aiogram import F, Router
@@ -255,11 +256,12 @@ async def show_about(message: Message):
 
     # Pre-filled message for manager
     prefilled_message = "Здравствуйте! Пишу по поводу бота CheckFollowers для анализа подписок Instagram."
-    manager_url = f"https://t.me/issue_resolver?text={prefilled_message.replace(' ', '%20')}"
+    manager_url = f"https://t.me/issue_resolver?text={quote(prefilled_message)}"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📄 Публичная оферта", callback_data="public_offer")],
+            [InlineKeyboardButton(text="🔒 Политика конфиденциальности", callback_data="privacy_policy")],
             [InlineKeyboardButton(text="💬 Написать менеджеру", url=manager_url)],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
@@ -360,54 +362,33 @@ async def show_tariffs(message: Message):
 
         text = "🛒 <b>Покупка проверок</b>\n\nВыберите тариф:\n\n"
         
-        # Separate buttons: Stars first, then Rub
+        # Stars buttons only (RUB temporarily disabled)
         stars_buttons = []
-        rub_buttons = []
         
         for tariff in tariffs:
             name = tariff["name"]
             checks = tariff["checks_count"]
-            price_rub = tariff["price_rub"]
             price_stars = tariff.get("price_stars")
             
-            text += f"📦 <b>{name}</b>\n"
-            text += f"   {checks} проверок"
             if price_stars:
-                text += f" — {price_stars}⭐"
-            if price_rub:
-                text += f" или {price_rub}₽"
-            text += "\n\n"
-            
-            tariff_id = tariff["tariff_id"]
-            
-            # Stars button first
-            if price_stars:
+                text += f"📦 <b>{name}</b>\n"
+                text += f"   {checks} проверок — {price_stars}⭐\n\n"
+                
+                tariff_id = tariff["tariff_id"]
                 stars_buttons.append([
                     InlineKeyboardButton(
                         text=f"⭐ {name} — {price_stars} Stars",
                         callback_data=f"buy_tariff:{tariff_id}:stars"
                     )
                 ])
-            
-            # Rub button
-            if price_rub:
-                rub_buttons.append([
-                    InlineKeyboardButton(
-                        text=f"💳 {name} — {price_rub}₽",
-                        callback_data=f"buy_tariff:{tariff_id}:rub"
-                    )
-                ])
 
         text += "👥 Или пригласите 10 друзей и получите 1 проверку бесплатно!"
         
-        # Combine buttons: Stars section, then Rub section, then navigation
+        # Combine buttons: Stars section, then navigation
         all_buttons = []
         
         if stars_buttons:
             all_buttons.extend(stars_buttons)
-        
-        if rub_buttons:
-            all_buttons.extend(rub_buttons)
         
         # Navigation buttons
         all_buttons.append([
@@ -777,7 +758,7 @@ async def callback_confirm_check(callback: CallbackQuery, state: FSMContext):
             )
 
         # Start polling (optional, since we have push notifications)
-        await poll_check_status(callback.message, check_id, state)
+        await poll_check_status(callback.message, check_id, username, state)
 
     except httpx.HTTPStatusError as e:
         error_msg = "Ошибка сервера"
@@ -798,7 +779,7 @@ async def callback_confirm_check(callback: CallbackQuery, state: FSMContext):
         await state.clear()
 
 
-async def poll_check_status(message: Message, check_id: str, state: FSMContext):
+async def poll_check_status(message: Message, check_id: str, username: str, state: FSMContext):
     """Poll check status until completion."""
     max_attempts = 120  # 10 minutes with 5 sec intervals
     poll_interval = 5
@@ -822,9 +803,15 @@ async def poll_check_status(message: Message, check_id: str, state: FSMContext):
             elif status == "failed":
                 # Error
                 error_msg = result.get("error_message", "Неизвестная ошибка")
+                keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="start_check")],
+                        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                    ]
+                )
                 await message.edit_text(
-                    f"❌ <b>Проверка завершилась с ошибкой</b>\n\n{error_msg}\n\n"
-                    "Попробуйте позже: /check"
+                    f"❌ <b>Проверка завершилась с ошибкой</b>\n\n{error_msg}",
+                    reply_markup=keyboard
                 )
                 await state.clear()
                 return
@@ -835,19 +822,23 @@ async def poll_check_status(message: Message, check_id: str, state: FSMContext):
                     last_progress = progress
                     progress_bar = create_progress_bar(progress)
                     queue_pos = result.get("queue_position")
-                    queue_text = f"\nПозиция в очереди: {queue_pos}" if queue_pos else ""
+                    queue_text = f"\n📍 Позиция в очереди: {queue_pos}" if queue_pos and queue_pos > 1 else ""
                     try:
                         await message.edit_text(
-                            f"⏳ <b>Обработка...</b>\n\n"
-                            f"{progress_bar} {progress}%{queue_text}\n\n"
-                            f"<i>ID: {check_id[:8]}...</i>"
+                            f"⏳ <b>Обработка @{username}...</b>\n\n"
+                            f"{progress_bar} {progress}%{queue_text}"
                         )
                     except Exception:
                         pass  # Ignore "message not modified" errors
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                await message.edit_text("❌ Проверка не найдена")
+                keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                    ]
+                )
+                await message.edit_text("❌ Проверка не найдена", reply_markup=keyboard)
                 await state.clear()
                 return
         except Exception as e:
@@ -856,10 +847,16 @@ async def poll_check_status(message: Message, check_id: str, state: FSMContext):
         await asyncio.sleep(poll_interval)
 
     # Timeout
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
     await message.edit_text(
         "⏰ <b>Превышено время ожидания</b>\n\n"
         "Проверка заняла слишком много времени.\n"
-        "Вы получите уведомление когда она завершится."
+        "Вы получите уведомление когда она завершится.",
+        reply_markup=keyboard
     )
     await state.clear()
 
@@ -885,15 +882,29 @@ async def handle_check_completed(message: Message, result: dict, state: FSMConte
 • Не взаимных: <b>{total_non_mutual:,}</b>
 """
 
-    await message.edit_text(text)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Новая проверка", callback_data="start_check")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
+
+    await message.edit_text(text, reply_markup=keyboard)
 
     # Send file if exists
     if file_path:
         try:
             file = FSInputFile(file_path)
+            file_keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🔍 Новая проверка", callback_data="start_check")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                ]
+            )
             await message.answer_document(
                 file,
-                caption="📄 Подробный отчёт в Excel файле"
+                caption="📄 Подробный отчёт в Excel файле",
+                reply_markup=file_keyboard
             )
         except Exception as e:
             logger.error(f"Error sending file: {e}")
@@ -917,9 +928,15 @@ async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     """Handle cancel button."""
     await callback.answer("Отменено")
     await state.clear()
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Начать проверку", callback_data="start_check")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
     await callback.message.edit_text(
-        "❌ Действие отменено.\n\n"
-        "Используйте /check чтобы начать новую проверку."
+        "❌ Действие отменено.",
+        reply_markup=keyboard
     )
 
 
@@ -940,6 +957,10 @@ async def callback_start_check(callback: CallbackQuery, state: FSMContext):
 async def callback_help(callback: CallbackQuery):
     """Handle help button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await cmd_help(callback.message)
 
 
@@ -950,6 +971,10 @@ async def callback_help(callback: CallbackQuery):
 async def callback_last_check(callback: CallbackQuery):
     """Handle last check button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await cmd_last(callback.message)
 
 
@@ -960,6 +985,10 @@ async def callback_last_check(callback: CallbackQuery):
 async def callback_balance(callback: CallbackQuery):
     """Handle balance button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await cmd_balance(callback.message)
 
 
@@ -970,6 +999,10 @@ async def callback_balance(callback: CallbackQuery):
 async def callback_buy(callback: CallbackQuery):
     """Handle buy button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await show_tariffs(callback.message)
 
 
@@ -980,6 +1013,10 @@ async def callback_buy(callback: CallbackQuery):
 async def callback_referral(callback: CallbackQuery):
     """Handle referral button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await cmd_referral(callback.message)
 
 
@@ -1126,6 +1163,10 @@ async def callback_buy_tariff(callback: CallbackQuery):
 async def callback_about(callback: CallbackQuery):
     """Handle about button."""
     await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await show_about(callback.message)
 
 
@@ -1167,7 +1208,7 @@ async def callback_public_offer(callback: CallbackQuery):
 
     # Pre-filled message for manager
     prefilled_message = "Здравствуйте! Пишу по поводу бота CheckFollowers для анализа подписок Instagram."
-    manager_url = f"https://t.me/issue_resolver?text={prefilled_message.replace(' ', '%20')}"
+    manager_url = f"https://t.me/issue_resolver?text={quote(prefilled_message)}"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1178,6 +1219,57 @@ async def callback_public_offer(callback: CallbackQuery):
     )
 
     await callback.message.edit_text(offer_text, reply_markup=keyboard)
+
+
+# --- Privacy Policy callback ---
+
+
+@router.callback_query(F.data == "privacy_policy")
+async def callback_privacy_policy(callback: CallbackQuery):
+    """Handle privacy policy button - show privacy policy text."""
+    await callback.answer()
+    
+    privacy_text = """
+🔒 <b>Политика конфиденциальности</b>
+
+<b>1. Какие данные мы собираем</b>
+Для оказания услуг сервис собирает и обрабатывает следующие данные:
+• Telegram ID пользователя
+• Telegram username (имя пользователя)
+• Имя и фамилия в Telegram (если указаны)
+• Номер телефона (если предоставлен через Telegram)
+
+<b>2. Цель сбора данных</b>
+Данные используются исключительно для:
+• Идентификации пользователя в системе
+• Начисления и учёта баланса проверок
+• Отправки уведомлений о результатах проверок
+• Связи с пользователем по вопросам сервиса
+• Работы реферальной программы
+
+<b>3. Хранение данных</b>
+• Данные хранятся на защищённых серверах
+• Доступ к данным имеют только администраторы сервиса
+• Данные не передаются третьим лицам
+
+<b>4. Удаление данных</b>
+Вы можете запросить удаление своих данных, написав менеджеру @issue_resolver
+
+<b>5. Согласие</b>
+Используя сервис, вы соглашаетесь с данной политикой конфиденциальности.
+
+<b>6. Контакты</b>
+По вопросам обработки данных: @issue_resolver
+"""
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="about")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
+
+    await callback.message.edit_text(privacy_text, reply_markup=keyboard)
 
 
 # --- Back to main menu callback ---
@@ -1197,3 +1289,23 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     await show_main_menu(callback.message, callback.from_user, edit=True)
+
+
+# --- Fallback handler for unknown messages ---
+
+
+@router.message()
+async def handle_unknown_message(message: Message, state: FSMContext):
+    """Handle any unrecognized message."""
+    # Check if we're in a state that expects input
+    current_state = await state.get_state()
+    if current_state == CheckStates.waiting_for_username:
+        # This is handled by process_username, skip
+        return
+    
+    keyboard = get_main_menu_keyboard()
+    await message.answer(
+        "🤔 Не понял команду.\n\n"
+        "Выберите действие из меню:",
+        reply_markup=keyboard
+    )
