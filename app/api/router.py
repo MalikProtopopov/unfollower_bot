@@ -33,22 +33,29 @@ async def get_or_create_user(
     first_name: str | None = None,
 ) -> User:
     """Get existing user or create new one."""
+    from app.config import get_settings
+    settings = get_settings()
+    
     result = await session.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
 
     if not user:
         # Generate referral code from user_id
         referral_code = f"ref_{user_id}"
+        
+        # Admins get 100 free checks, regular users get 0
+        initial_balance = 100 if settings.is_admin(user_id) else 0
+        
         user = User(
             user_id=user_id,
             username=username,
             first_name=first_name,
             referral_code=referral_code,
-            checks_balance=1,  # One free check for new users
+            checks_balance=initial_balance,
         )
         session.add(user)
         await session.flush()
-        logger.info(f"Created new user: {user_id} with referral_code: {referral_code}")
+        logger.info(f"Created new user: {user_id} with referral_code: {referral_code}, balance: {initial_balance}")
 
     return user
 

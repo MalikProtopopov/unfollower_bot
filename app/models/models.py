@@ -67,7 +67,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Monetization fields
-    checks_balance: Mapped[int] = mapped_column(Integer, default=1)  # 1 free check for new users
+    checks_balance: Mapped[int] = mapped_column(Integer, default=0)  # No free checks on registration
     
     # Referral fields
     referrer_id: Mapped[int | None] = mapped_column(
