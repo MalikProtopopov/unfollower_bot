@@ -291,6 +291,3 @@ docker-compose up --build
 
 1. **Инфраструктура** - Poetry, Docker, базовая структура
 2. **БД** - модели SQLAlchemy, миграции Alembic
-3. **Скрейпер** - Instagram GraphQL модуль
-4. **Backend** - FastAPI endpoints, background tasks
-5. **Генератор файлов** - XLSX с pandas

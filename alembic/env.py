@@ -20,8 +20,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set database URL from settings
+# IMPORTANT: Escape % for ConfigParser interpolation
+# URL-encoded passwords contain % which ConfigParser interprets as interpolation
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+database_url_str = str(settings.database_url).replace("%", "%%")
+config.set_main_option("sqlalchemy.url", database_url_str)
 
 # Target metadata for autogenerate
 target_metadata = Base.metadata

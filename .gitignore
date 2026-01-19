@@ -42,6 +42,11 @@ env/
 .env
 .env.local
 .env.*.local
+.env.prod
+
+# Production files (generated)
+nginx/nginx.conf
+backups/
 
 # Logs
 logs/
