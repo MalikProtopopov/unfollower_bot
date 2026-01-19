@@ -68,10 +68,19 @@ async def cmd_start_with_referral(message: Message, state: FSMContext):
             )
             if response.status_code == 200:
                 result = response.json()
-                logger.info(f"User {user.id} ensured with balance: {result.get('checks_balance', 0)}")
+                logger.info(
+                    f"User {user.id} ensured with balance: {result.get('checks_balance', 0)}, "
+                    f"referral_code: {result.get('referral_code', 'N/A')}"
+                )
+            else:
+                logger.error(
+                    f"Failed to ensure user {user.id}: status={response.status_code}, "
+                    f"response={response.text}"
+                )
             
             # Register referral if provided
             if referral_code and referral_code.startswith("ref_"):
+                logger.info(f"Attempting to register referral: code={referral_code}, user={user.id}")
                 ref_response = await client.post(
                     get_api_url("/referrals/register"),
                     json={
@@ -82,9 +91,27 @@ async def cmd_start_with_referral(message: Message, state: FSMContext):
                 if ref_response.status_code == 200:
                     ref_result = ref_response.json()
                     if ref_result.get("success"):
-                        logger.info(f"Referral registered for user {user.id} with code {referral_code}")
+                        logger.info(
+                            f"✓ Referral registered successfully for user {user.id} with code {referral_code}. "
+                            f"Bonus granted: {ref_result.get('bonus_granted_to_referrer', False)}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Referral registration failed for user {user.id}: "
+                            f"{ref_result.get('message', 'Unknown error')}"
+                        )
+                else:
+                    logger.error(
+                        f"Failed to register referral for user {user.id}: "
+                        f"status={ref_response.status_code}, response={ref_response.text}"
+                    )
+            elif referral_code:
+                logger.warning(
+                    f"Invalid referral code format for user {user.id}: {referral_code} "
+                    f"(expected format: ref_123456789)"
+                )
     except Exception as e:
-        logger.error(f"Error processing referral for user {user.id}: {e}")
+        logger.error(f"Error processing referral for user {user.id}: {e}", exc_info=True)
     
     await show_welcome_message(message, user)
 
