@@ -115,6 +115,24 @@ async def cmd_start(message: Message, state: FSMContext):
     await show_welcome_message(message, user)
 
 
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Get main menu keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Начать проверку", callback_data="start_check")],
+            [
+                InlineKeyboardButton(text="💰 Баланс", callback_data="balance"),
+                InlineKeyboardButton(text="🛒 Купить", callback_data="buy"),
+            ],
+            [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
+            [
+                InlineKeyboardButton(text="ℹ️ О сервисе", callback_data="about"),
+                InlineKeyboardButton(text="❓ Помощь", callback_data="help"),
+            ],
+        ]
+    )
+
+
 async def show_welcome_message(message: Message, user):
     """Show welcome message with keyboard."""
     welcome_text = f"""
@@ -138,22 +156,25 @@ async def show_welcome_message(message: Message, user):
 ⚠️ <b>Важно:</b> Проверка работает только для публичных аккаунтов.
 """
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Начать проверку", callback_data="start_check")],
-            [
-                InlineKeyboardButton(text="💰 Баланс", callback_data="balance"),
-                InlineKeyboardButton(text="🛒 Купить", callback_data="buy"),
-            ],
-            [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
-            [
-                InlineKeyboardButton(text="ℹ️ О сервисе", callback_data="about"),
-                InlineKeyboardButton(text="❓ Помощь", callback_data="help"),
-            ],
-        ]
-    )
+    await message.answer(welcome_text, reply_markup=get_main_menu_keyboard())
 
-    await message.answer(welcome_text, reply_markup=keyboard)
+
+async def show_main_menu(message: Message, user=None, edit: bool = False):
+    """Show main menu."""
+    if user is None:
+        user = message.from_user
+    
+    welcome_text = f"""
+👋 <b>Главное меню</b>
+
+Выберите действие:
+"""
+    keyboard = get_main_menu_keyboard()
+    
+    if edit and hasattr(message, 'edit_text'):
+        await message.edit_text(welcome_text, reply_markup=keyboard)
+    else:
+        await message.answer(welcome_text, reply_markup=keyboard)
 
 
 # --- /help command ---
@@ -240,7 +261,7 @@ async def show_about(message: Message):
         inline_keyboard=[
             [InlineKeyboardButton(text="📄 Публичная оферта", callback_data="public_offer")],
             [InlineKeyboardButton(text="💬 Написать менеджеру", url=manager_url)],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
     )
 
@@ -269,6 +290,7 @@ async def cmd_balance(message: Message):
                         inline_keyboard=[
                             [InlineKeyboardButton(text="🛒 Купить проверки", callback_data="buy")],
                             [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
                         ]
                     )
                 )
@@ -324,15 +346,24 @@ async def show_tariffs(message: Message):
         tariffs = result.get("tariffs", [])
         
         if not tariffs:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                ]
+            )
             await message.answer(
                 "🛒 <b>Покупка проверок</b>\n\n"
-                "В данный момент нет доступных тарифов."
+                "В данный момент нет доступных тарифов.",
+                reply_markup=keyboard
             )
             return
 
         text = "🛒 <b>Покупка проверок</b>\n\nВыберите тариф:\n\n"
         
-        buttons = []
+        # Separate buttons: Stars first, then Rub
+        stars_buttons = []
+        rub_buttons = []
+        
         for tariff in tariffs:
             name = tariff["name"]
             checks = tariff["checks_count"]
@@ -340,35 +371,60 @@ async def show_tariffs(message: Message):
             price_stars = tariff.get("price_stars")
             
             text += f"📦 <b>{name}</b>\n"
-            text += f"   {checks} проверок — {price_rub}₽"
+            text += f"   {checks} проверок"
             if price_stars:
-                text += f" или {price_stars}⭐"
+                text += f" — {price_stars}⭐"
+            if price_rub:
+                text += f" или {price_rub}₽"
             text += "\n\n"
             
-            # Button for this tariff
             tariff_id = tariff["tariff_id"]
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"💳 {name} — {price_rub}₽",
-                    callback_data=f"buy_tariff:{tariff_id}:rub"
-                )
-            ])
+            
+            # Stars button first
             if price_stars:
-                buttons.append([
+                stars_buttons.append([
                     InlineKeyboardButton(
                         text=f"⭐ {name} — {price_stars} Stars",
                         callback_data=f"buy_tariff:{tariff_id}:stars"
                     )
                 ])
+            
+            # Rub button
+            if price_rub:
+                rub_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"💳 {name} — {price_rub}₽",
+                        callback_data=f"buy_tariff:{tariff_id}:rub"
+                    )
+                ])
 
         text += "👥 Или пригласите 10 друзей и получите 1 проверку бесплатно!"
         
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        # Combine buttons: Stars section, then Rub section, then navigation
+        all_buttons = []
+        
+        if stars_buttons:
+            all_buttons.extend(stars_buttons)
+        
+        if rub_buttons:
+            all_buttons.extend(rub_buttons)
+        
+        # Navigation buttons
+        all_buttons.append([
+            InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=all_buttons)
         await message.answer(text, reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Error in /buy command: {e}")
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.", reply_markup=keyboard)
 
 
 # --- /referral command ---
@@ -437,6 +493,7 @@ async def cmd_referral(message: Message):
                     text="📤 Поделиться ссылкой",
                     switch_inline_query=f"Проверь свои подписки в Instagram! {referral_link}"
                 )],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
             ]
         )
 
@@ -565,6 +622,7 @@ async def cmd_check(message: Message, state: FSMContext):
                             inline_keyboard=[
                                 [InlineKeyboardButton(text="🛒 Купить проверки", callback_data="buy")],
                                 [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
+                                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
                             ]
                         )
                     )
@@ -586,7 +644,8 @@ async def cmd_check(message: Message, state: FSMContext):
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
     )
 
@@ -681,6 +740,7 @@ async def callback_confirm_check(callback: CallbackQuery, state: FSMContext):
                         inline_keyboard=[
                             [InlineKeyboardButton(text="🛒 Купить проверки", callback_data="buy")],
                             [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
                         ]
                     )
                 )
@@ -929,7 +989,12 @@ async def callback_buy_tariff(callback: CallbackQuery):
     # Parse callback data: buy_tariff:{tariff_id}:{payment_type}
     parts = callback.data.split(":")
     if len(parts) != 3:
-        await callback.message.answer("❌ Ошибка: неверные данные")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
+        await callback.message.answer("❌ Ошибка: неверные данные", reply_markup=keyboard)
         return
     
     tariff_id = parts[1]
@@ -976,42 +1041,76 @@ async def callback_buy_tariff(callback: CallbackQuery):
                     
                 elif response.status_code == 404:
                     error_detail = response.json().get("detail", "Тариф не найден")
-                    await callback.message.answer(f"❌ {error_detail}")
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                        ]
+                    )
+                    await callback.message.answer(f"❌ {error_detail}", reply_markup=keyboard)
                     
                 elif response.status_code == 400:
                     error_detail = response.json().get("detail", "Тариф недоступен")
-                    await callback.message.answer(f"❌ {error_detail}")
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                        ]
+                    )
+                    await callback.message.answer(f"❌ {error_detail}", reply_markup=keyboard)
                     
                 else:
                     logger.error(
                         f"Error creating Stars payment: status={response.status_code}, "
                         f"body={response.text}"
                     )
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                        ]
+                    )
                     await callback.message.answer(
                         "❌ Не удалось создать платёж.\n"
-                        "Пожалуйста, попробуйте позже."
+                        "Пожалуйста, попробуйте позже.",
+                        reply_markup=keyboard
                     )
                     
         except httpx.TimeoutException:
             logger.error(f"Timeout creating Stars payment for user {user_id}")
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                ]
+            )
             await callback.message.answer(
                 "⏳ Превышено время ожидания.\n"
-                "Пожалуйста, попробуйте позже."
+                "Пожалуйста, попробуйте позже.",
+                reply_markup=keyboard
             )
         except Exception as e:
             logger.error(f"Error creating Stars payment for user {user_id}: {e}")
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+                ]
+            )
             await callback.message.answer(
                 "❌ Произошла ошибка.\n"
-                "Пожалуйста, попробуйте позже."
+                "Пожалуйста, попробуйте позже.",
+                reply_markup=keyboard
             )
     else:
         # Robokassa payment flow (still in development)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
         await callback.message.answer(
             "💳 <b>Оплата через Robokassa</b>\n\n"
             "Эта функция находится в разработке.\n"
             "Для покупки проверок свяжитесь с поддержкой.\n\n"
             "Или пригласите 10 друзей и получите 1 проверку бесплатно!\n"
-            "Используйте /referral для получения реферальной ссылки."
+            "Используйте /referral для получения реферальной ссылки.",
+            reply_markup=keyboard
         )
 
 
@@ -1069,6 +1168,7 @@ async def callback_public_offer(callback: CallbackQuery):
         inline_keyboard=[
             [InlineKeyboardButton(text="💬 Написать менеджеру", url=manager_url)],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="about")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
     )
 
@@ -1083,43 +1183,12 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     """Handle back to main menu button."""
     await callback.answer()
     await state.clear()
-    
-    user = callback.from_user
-    
-    welcome_text = f"""
-👋 <b>Привет, {user.first_name}!</b>
+    await show_main_menu(callback.message, callback.from_user, edit=True)
 
-Я помогу тебе проанализировать взаимные подписки в Instagram.
 
-🔍 <b>Что я умею:</b>
-• Показать, кто не подписан на тебя взаимно
-• Сгенерировать отчёт в Excel файле
-• Сохранить историю проверок
-
-📋 <b>Команды:</b>
-/check — начать проверку
-/balance — баланс проверок
-/buy — купить проверки
-/referral — пригласить друзей
-/last — последняя проверка
-/about — о сервисе
-
-⚠️ <b>Важно:</b> Проверка работает только для публичных аккаунтов.
-"""
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Начать проверку", callback_data="start_check")],
-            [
-                InlineKeyboardButton(text="💰 Баланс", callback_data="balance"),
-                InlineKeyboardButton(text="🛒 Купить", callback_data="buy"),
-            ],
-            [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
-            [
-                InlineKeyboardButton(text="ℹ️ О сервисе", callback_data="about"),
-                InlineKeyboardButton(text="❓ Помощь", callback_data="help"),
-            ],
-        ]
-    )
-
-    await callback.message.edit_text(welcome_text, reply_markup=keyboard)
+@router.callback_query(F.data == "main_menu")
+async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
+    """Handle main menu button."""
+    await callback.answer()
+    await state.clear()
+    await show_main_menu(callback.message, callback.from_user, edit=True)
