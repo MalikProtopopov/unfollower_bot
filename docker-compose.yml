@@ -1,0 +1,102 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: mutual_followers_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-mutual_followers}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mutual_followers_app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+      - ./data/checks:/app/data/checks
+      - ./logs:/app/logs
+    ports:
+      - "8080:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mutual_followers}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN:-}
+      - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+      - INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID:-}
+      - UPLOAD_DIR=/app/data/checks
+      - DEBUG=${DEBUG:-True}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
+      - BOT_USERNAME=${BOT_USERNAME:-}
+      - MAX_CONCURRENT_CHECKS=${MAX_CONCURRENT_CHECKS:-1}
+      - QUEUE_PROCESSING_INTERVAL=${QUEUE_PROCESSING_INTERVAL:-5}
+      - REFERRAL_BONUS_CHECKS=${REFERRAL_BONUS_CHECKS:-1}
+      - REFERRAL_REQUIRED_COUNT=${REFERRAL_REQUIRED_COUNT:-10}
+      - ROBOKASSA_MERCHANT_LOGIN=${ROBOKASSA_MERCHANT_LOGIN:-}
+      - ROBOKASSA_PASSWORD_1=${ROBOKASSA_PASSWORD_1:-}
+      - ROBOKASSA_PASSWORD_2=${ROBOKASSA_PASSWORD_2:-}
+      - ROBOKASSA_TEST_MODE=${ROBOKASSA_TEST_MODE:-True}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mutual_followers_bot
+    command: python -m app.bot.main
+    volumes:
+      - .:/app
+      - ./data/checks:/app/data/checks
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mutual_followers}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - API_BASE_URL=http://app:8000
+      - UPLOAD_DIR=/app/data/checks
+      - DEBUG=${DEBUG:-True}
+      - BOT_USERNAME=${BOT_USERNAME:-}
+      - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+    depends_on:
+      - app
+      - db
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mutual_followers_worker
+    command: python -m app.services.queue_worker
+    volumes:
+      - .:/app
+      - ./data/checks:/app/data/checks
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mutual_followers}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN:-}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
+      - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+      - INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID:-}
+      - UPLOAD_DIR=/app/data/checks
+      - DEBUG=${DEBUG:-True}
+      - MAX_CONCURRENT_CHECKS=${MAX_CONCURRENT_CHECKS:-1}
+      - QUEUE_PROCESSING_INTERVAL=${QUEUE_PROCESSING_INTERVAL:-5}
+    depends_on:
+      - app
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
