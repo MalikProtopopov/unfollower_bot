@@ -5,7 +5,8 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -114,17 +115,22 @@ class Check(Base):
     )
     target_username: Mapped[str] = mapped_column(String(255), nullable=False)
     platform: Mapped[PlatformEnum] = mapped_column(
-        Enum(PlatformEnum), default=PlatformEnum.INSTAGRAM
+        SQLAlchemyEnum(PlatformEnum, values_callable=lambda x: [e.value for e in x]),
+        default=PlatformEnum.INSTAGRAM
     )
     status: Mapped[CheckStatusEnum] = mapped_column(
-        Enum(CheckStatusEnum), default=CheckStatusEnum.PENDING
+        SQLAlchemyEnum(CheckStatusEnum, values_callable=lambda x: [e.value for e in x]),
+        default=CheckStatusEnum.PENDING
     )
     progress: Mapped[int] = mapped_column(Integer, default=0)
     total_subscriptions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_followers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_non_mutual: Mapped[int | None] = mapped_column(Integer, nullable=True)
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    file_type: Mapped[FileTypeEnum | None] = mapped_column(Enum(FileTypeEnum), nullable=True)
+    file_type: Mapped[FileTypeEnum | None] = mapped_column(
+        SQLAlchemyEnum(FileTypeEnum, values_callable=lambda x: [e.value for e in x]),
+        nullable=True
+    )
     file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     external_check_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -225,10 +231,12 @@ class Payment(Base):
     currency: Mapped[str] = mapped_column(String(3), default="RUB")
     checks_count: Mapped[int] = mapped_column(Integer, nullable=False)  # Number of checks purchased
     payment_method: Mapped[PaymentMethodEnum] = mapped_column(
-        Enum(PaymentMethodEnum), nullable=False
+        SQLAlchemyEnum(PaymentMethodEnum, values_callable=lambda x: [e.value for e in x]),
+        nullable=False
     )
     status: Mapped[PaymentStatusEnum] = mapped_column(
-        Enum(PaymentStatusEnum), default=PaymentStatusEnum.PENDING
+        SQLAlchemyEnum(PaymentStatusEnum, values_callable=lambda x: [e.value for e in x]),
+        default=PaymentStatusEnum.PENDING
     )
     
     # Robokassa specific fields
