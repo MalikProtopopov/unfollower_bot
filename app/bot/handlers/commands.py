@@ -501,7 +501,12 @@ async def cmd_referral(message: Message):
 
     except Exception as e:
         logger.error(f"Error in /referral command: {e}")
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
+        await message.answer("❌ Произошла ошибка. Попробуйте позже.", reply_markup=keyboard)
 
 
 # --- /last command ---
