@@ -258,6 +258,24 @@ async def get_check_file(
 # --- User Balance Endpoints ---
 
 
+@router.post("/users/ensure", response_model=UserBalanceResponse)
+async def ensure_user_exists(
+    user_id: int,
+    username: str | None = None,
+    first_name: str | None = None,
+    session: Annotated[AsyncSession, Depends(get_session)] = None,
+):
+    """Ensure user exists in the database (create if not exists)."""
+    user = await get_or_create_user(session, user_id, username, first_name)
+    await session.commit()
+    
+    return UserBalanceResponse(
+        user_id=user.user_id,
+        checks_balance=user.checks_balance,
+        referral_code=user.referral_code,
+    )
+
+
 @router.get("/users/{user_id}/balance", response_model=UserBalanceResponse)
 async def get_user_balance(
     user_id: int,

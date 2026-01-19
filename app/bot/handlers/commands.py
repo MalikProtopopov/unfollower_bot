@@ -56,15 +56,21 @@ async def cmd_start_with_referral(message: Message, state: FSMContext):
     # Register user and handle referral
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # First, ensure user exists (will be created with balance=1)
-            response = await client.get(
-                get_api_url(f"/users/{user.id}/balance")
+            # Ensure user exists (will be created with proper balance)
+            response = await client.post(
+                get_api_url("/users/ensure"),
+                params={
+                    "user_id": user.id,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                }
             )
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"User {user.id} ensured with balance: {result.get('checks_balance', 0)}")
             
-            # If user doesn't exist, they'll be created on first check
-            # But we need to register the referral
+            # Register referral if provided
             if referral_code and referral_code.startswith("ref_"):
-                # Register referral
                 ref_response = await client.post(
                     get_api_url("/referrals/register"),
                     json={
@@ -88,6 +94,24 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user = message.from_user
     logger.info(f"User {user.id} ({user.username}) started the bot")
+    
+    # Ensure user exists in database (will be created with proper balance)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                get_api_url("/users/ensure"),
+                params={
+                    "user_id": user.id,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                }
+            )
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"User {user.id} ensured with balance: {result.get('checks_balance', 0)}")
+    except Exception as e:
+        logger.error(f"Error ensuring user {user.id}: {e}")
+    
     await show_welcome_message(message, user)
 
 
@@ -236,11 +260,17 @@ async def cmd_balance(message: Message):
             response = await client.get(get_api_url(f"/users/{user_id}/balance"))
             
             if response.status_code == 404:
-                # User doesn't exist yet, create on first check
+                # User doesn't exist yet
                 await message.answer(
                     "💰 <b>Баланс проверок</b>\n\n"
-                    "У вас: <b>1</b> проверка (бесплатная при регистрации)\n\n"
-                    "Используйте /check чтобы проверить аккаунт."
+                    "У вас: <b>0</b> проверок\n\n"
+                    "Для проверки нужно пополнить баланс или пригласить друзей.",
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🛒 Купить проверки", callback_data="buy")],
+                            [InlineKeyboardButton(text="👥 Пригласить друзей", callback_data="referral")],
+                        ]
+                    )
                 )
                 return
             
