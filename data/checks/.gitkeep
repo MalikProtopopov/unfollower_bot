@@ -1,2 +1,2 @@
-# This directory stores generated XLSX/CSV check reports
-
+# Эта директория используется для хранения сгенерированных Excel отчетов
+# Файлы .xlsx игнорируются в .gitignore

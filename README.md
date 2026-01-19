@@ -69,23 +69,59 @@ docker-compose up --build
 ## Структура проекта
 
 ```
-mutual-followers-analyzer/
-├── app/
-│   ├── api/           # FastAPI endpoints
-│   ├── bot/           # Telegram bot (aiogram)
-│   │   └── handlers/  # Command handlers
-│   ├── models/        # SQLAlchemy models & Pydantic schemas
-│   ├── services/      # Business logic
-│   │   ├── instagram_scraper.py
+check_follows/
+├── app/                    # Основное приложение
+│   ├── api/                # FastAPI endpoints
+│   │   ├── admin.py        # Админские endpoints
+│   │   ├── payments.py     # Платежи (Robokassa)
+│   │   ├── referrals.py    # Реферальная программа
+│   │   ├── router.py       # Основной роутер
+│   │   └── tariffs.py      # Тарифы
+│   ├── bot/                # Telegram bot (aiogram)
+│   │   ├── handlers/       # Обработчики команд и callback
+│   │   │   ├── commands.py
+│   │   │   └── callbacks.py
+│   │   └── main.py         # Точка входа бота
+│   ├── models/             # Модели данных
+│   │   ├── database.py     # Настройка БД
+│   │   ├── models.py       # SQLAlchemy models
+│   │   └── schemas.py      # Pydantic schemas
+│   ├── services/           # Бизнес-логика
 │   │   ├── check_service.py
-│   │   └── file_generator.py
-│   └── utils/         # Utilities
-├── alembic/           # Database migrations
-├── data/checks/       # Generated reports
-├── logs/              # Application logs
-├── docker-compose.yml
-├── Dockerfile
-└── pyproject.toml
+│   │   ├── instagram_scraper.py
+│   │   ├── file_generator.py
+│   │   ├── queue_service.py
+│   │   ├── queue_worker.py
+│   │   ├── notification_service.py
+│   │   ├── admin_notification_service.py
+│   │   └── referral_service.py
+│   ├── utils/              # Утилиты
+│   │   ├── logger.py
+│   │   ├── robokassa.py
+│   │   └── validators.py
+│   ├── config.py           # Конфигурация
+│   └── main.py             # FastAPI приложение
+├── alembic/                # Миграции БД
+│   └── versions/           # Файлы миграций
+├── data/                   # Данные приложения
+│   └── checks/             # Сгенерированные отчеты
+├── docs/                   # Документация
+│   ├── SERVER_SETUP.md     # Настройка сервера
+│   ├── reqs.md             # Требования
+│   ├── ROBOKASSA_URLS.md   # Настройка Robokassa
+│   └── ...
+├── scripts/                # Скрипты
+│   ├── cleanup_server.sh   # Очистка сервера
+│   ├── setup_server.sh     # Настройка проекта
+│   └── QUICK_START.md      # Быстрый старт
+├── logs/                   # Логи приложения
+├── docker-compose.yml      # Docker Compose конфигурация
+├── Dockerfile              # Docker образ
+├── requirements.txt        # Python зависимости
+├── pyproject.toml          # Poetry конфигурация
+├── alembic.ini            # Alembic конфигурация
+├── env.example            # Пример переменных окружения
+└── README.md              # Документация проекта
 ```
 
 ## API Endpoints
@@ -210,6 +246,8 @@ docker-compose exec app alembic upgrade head
 
 **Подробная инструкция:** [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md)
 
+**Структура проекта:** [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+
 ## Ограничения
 
 - ⚠️ Работает только с публичными Instagram аккаунтами
@@ -219,5 +257,3 @@ docker-compose exec app alembic upgrade head
 ## Лицензия
 
 MIT
-
-# unfollower_bot
