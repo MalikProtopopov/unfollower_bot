@@ -12,8 +12,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.database import get_session
 from app.models.models import Payment, PaymentMethodEnum, PaymentStatusEnum, Tariff, User
-from app.models.schemas import PaymentCreateRequest, PaymentResponse
+from app.models.schemas import (
+    PaymentCreateRequest,
+    PaymentEventResponse,
+    PaymentEventsListResponse,
+    PaymentResponse,
+    TelegramStarsPaymentCompleteRequest,
+    TelegramStarsPaymentCompleteResponse,
+    TelegramStarsPaymentCreateRequest,
+    TelegramStarsPaymentCreateResponse,
+    TelegramStarsPaymentFailedRequest,
+    TelegramStarsPaymentFailedResponse,
+)
 from app.services.admin_notification_service import notify_admin
+from app.services.payment_service import (
+    PaymentAlreadyCompletedError,
+    PaymentAmountMismatchError,
+    PaymentInvalidStatusError,
+    PaymentNotFoundError,
+    TariffNotAvailableError,
+    TariffNotFoundError,
+    UserNotFoundError,
+    complete_telegram_stars_payment,
+    create_telegram_stars_payment,
+    fail_telegram_stars_payment,
+    get_payment_with_events,
+    validate_telegram_stars_payment,
+)
 from app.services.notification_service import TelegramNotifier
 from app.utils.logger import logger
 from app.utils.robokassa import (
@@ -578,3 +603,238 @@ async def get_user_payments(
         ],
         "total": len(payments),
     }
+
+
+# --- Telegram Stars Payment Endpoints ---
+
+
+@router.post("/telegram-stars/create", response_model=TelegramStarsPaymentCreateResponse)
+async def create_telegram_stars_payment_endpoint(
+    request: TelegramStarsPaymentCreateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Create a new Telegram Stars payment.
+    
+    Returns payment details needed for sending invoice via Telegram Bot API.
+    """
+    try:
+        payment, tariff = await create_telegram_stars_payment(
+            session=session,
+            user_id=request.user_id,
+            tariff_id=request.tariff_id,
+        )
+        
+        return TelegramStarsPaymentCreateResponse(
+            payment_id=payment.payment_id,
+            user_id=payment.user_id,
+            tariff_id=tariff.tariff_id,
+            tariff_name=tariff.name,
+            tariff_description=tariff.description,
+            checks_count=tariff.checks_count,
+            price_stars=tariff.price_stars,
+            currency="XTR",
+            status=payment.status,
+            created_at=payment.created_at,
+        )
+        
+    except UserNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except TariffNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except TariffNotAvailableError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/telegram-stars/validate/{payment_id}")
+async def validate_telegram_stars_payment_endpoint(
+    payment_id: uuid.UUID,
+    expected_amount: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Validate a Telegram Stars payment before pre-checkout.
+    
+    Called by bot during pre_checkout_query to verify payment is valid.
+    """
+    try:
+        payment = await validate_telegram_stars_payment(
+            session=session,
+            payment_id=payment_id,
+            expected_amount=expected_amount,
+        )
+        
+        return {
+            "valid": True,
+            "payment_id": str(payment.payment_id),
+            "status": payment.status.value,
+        }
+        
+    except PaymentNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except PaymentAlreadyCompletedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except PaymentAmountMismatchError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except PaymentInvalidStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/telegram-stars/complete", response_model=TelegramStarsPaymentCompleteResponse)
+async def complete_telegram_stars_payment_endpoint(
+    request: TelegramStarsPaymentCompleteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Complete a Telegram Stars payment after successful payment.
+    
+    Called by bot after receiving successful_payment message.
+    Adds checks to user balance and marks payment as completed.
+    """
+    try:
+        payment, user = await complete_telegram_stars_payment(
+            session=session,
+            payment_id=request.payment_id,
+            telegram_payment_charge_id=request.telegram_payment_charge_id,
+            total_amount=request.total_amount,
+        )
+        
+        # Notify admin about successful Stars payment
+        await notify_admin(
+            f"💰 Новая оплата через Telegram Stars!\n\n"
+            f"User: {user.user_id} (@{user.username or 'N/A'})\n"
+            f"Сумма: {request.total_amount} ⭐\n"
+            f"Проверок: +{payment.checks_count}\n"
+            f"Новый баланс: {user.checks_balance}"
+        )
+        
+        return TelegramStarsPaymentCompleteResponse(
+            payment_id=payment.payment_id,
+            status=payment.status,
+            checks_added=payment.checks_count,
+            user_checks_balance=user.checks_balance,
+            completed_at=payment.completed_at,
+        )
+        
+    except PaymentNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except PaymentAlreadyCompletedError as e:
+        # This is actually idempotent - return success
+        logger.warning(f"Payment already completed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+    except PaymentAmountMismatchError as e:
+        # Notify admin about suspicious activity
+        await notify_admin(
+            f"⚠️ Несовпадение суммы платежа Stars!\n\n"
+            f"Payment ID: {request.payment_id}\n"
+            f"Получено: {request.total_amount} XTR\n"
+            f"Ошибка: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except UserNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@router.post("/telegram-stars/failed", response_model=TelegramStarsPaymentFailedResponse)
+async def fail_telegram_stars_payment_endpoint(
+    request: TelegramStarsPaymentFailedRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Mark a Telegram Stars payment as failed.
+    
+    Called when payment fails or is cancelled.
+    """
+    try:
+        payment = await fail_telegram_stars_payment(
+            session=session,
+            payment_id=request.payment_id,
+            error_reason=request.error_reason,
+            error_message=request.error_message,
+        )
+        
+        # Notify admin about failed payment
+        await notify_admin(
+            f"⚠️ Неудачный платёж Telegram Stars\n\n"
+            f"Payment ID: {request.payment_id}\n"
+            f"Причина: {request.error_reason}\n"
+            f"Сообщение: {request.error_message or 'N/A'}"
+        )
+        
+        return TelegramStarsPaymentFailedResponse(
+            payment_id=payment.payment_id,
+            status=payment.status,
+            error_reason=request.error_reason,
+        )
+        
+    except PaymentNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except PaymentAlreadyCompletedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get("/{payment_id}/events", response_model=PaymentEventsListResponse)
+async def get_payment_events(
+    payment_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Get all events for a payment (for admin/audit purposes)."""
+    payment, events = await get_payment_with_events(session, payment_id)
+    
+    if not payment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Payment {payment_id} not found",
+        )
+    
+    return PaymentEventsListResponse(
+        events=[
+            PaymentEventResponse(
+                event_id=e.event_id,
+                payment_id=e.payment_id,
+                event_type=e.event_type.value,
+                status_before=e.status_before,
+                status_after=e.status_after,
+                details=e.details,
+                error_message=e.error_message,
+                created_at=e.created_at,
+            )
+            for e in events
+        ],
+        total=len(events),
+    )

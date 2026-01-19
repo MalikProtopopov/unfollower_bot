@@ -934,16 +934,78 @@ async def callback_buy_tariff(callback: CallbackQuery):
     
     tariff_id = parts[1]
     payment_type = parts[2]  # 'rub' or 'stars'
+    user_id = callback.from_user.id
     
-    # For now, show a stub message
-    # TODO: Implement actual payment flow
     if payment_type == "stars":
-        await callback.message.answer(
-            "⭐ <b>Оплата через Telegram Stars</b>\n\n"
-            "Эта функция находится в разработке.\n"
-            "Пожалуйста, попробуйте позже или выберите оплату в рублях."
-        )
+        # Create payment and send invoice for Telegram Stars
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Create payment via API
+                response = await client.post(
+                    get_api_url("/payments/telegram-stars/create"),
+                    json={
+                        "user_id": user_id,
+                        "tariff_id": tariff_id,
+                    },
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    payment_id = result["payment_id"]
+                    tariff_name = result["tariff_name"]
+                    tariff_description = result.get("tariff_description")
+                    checks_count = result["checks_count"]
+                    price_stars = result["price_stars"]
+                    
+                    # Import and send invoice
+                    from app.bot.handlers.payments import send_stars_invoice
+                    
+                    await send_stars_invoice(
+                        message=callback.message,
+                        payment_id=payment_id,
+                        tariff_name=tariff_name,
+                        tariff_description=tariff_description,
+                        checks_count=checks_count,
+                        price_stars=price_stars,
+                    )
+                    
+                    logger.info(
+                        f"Stars invoice sent for user {user_id}, "
+                        f"tariff={tariff_name}, price={price_stars}"
+                    )
+                    
+                elif response.status_code == 404:
+                    error_detail = response.json().get("detail", "Тариф не найден")
+                    await callback.message.answer(f"❌ {error_detail}")
+                    
+                elif response.status_code == 400:
+                    error_detail = response.json().get("detail", "Тариф недоступен")
+                    await callback.message.answer(f"❌ {error_detail}")
+                    
+                else:
+                    logger.error(
+                        f"Error creating Stars payment: status={response.status_code}, "
+                        f"body={response.text}"
+                    )
+                    await callback.message.answer(
+                        "❌ Не удалось создать платёж.\n"
+                        "Пожалуйста, попробуйте позже."
+                    )
+                    
+        except httpx.TimeoutException:
+            logger.error(f"Timeout creating Stars payment for user {user_id}")
+            await callback.message.answer(
+                "⏳ Превышено время ожидания.\n"
+                "Пожалуйста, попробуйте позже."
+            )
+        except Exception as e:
+            logger.error(f"Error creating Stars payment for user {user_id}: {e}")
+            await callback.message.answer(
+                "❌ Произошла ошибка.\n"
+                "Пожалуйста, попробуйте позже."
+            )
     else:
+        # Robokassa payment flow (still in development)
         await callback.message.answer(
             "💳 <b>Оплата через Robokassa</b>\n\n"
             "Эта функция находится в разработке.\n"

@@ -243,3 +243,100 @@ async def notify_admin(message: str) -> None:
     notifier = get_admin_notifier()
     await notifier.notify_all_admins(message)
 
+
+# --- Telegram Stars Payment Notifications ---
+
+
+async def notify_admin_stars_payment_success(
+    user_id: int,
+    username: str | None,
+    amount_stars: int,
+    checks_count: int,
+    new_balance: int,
+    payment_id: str,
+) -> None:
+    """Notify admins about a successful Telegram Stars payment."""
+    notifier = get_admin_notifier()
+    
+    user_mention = f"@{username}" if username else f"ID: {user_id}"
+    
+    text = f"""
+⭐ <b>Новая оплата через Telegram Stars!</b>
+
+👤 Пользователь: {user_mention}
+🆔 User ID: <code>{user_id}</code>
+
+💵 Сумма: {amount_stars} ⭐
+🔢 Проверок: +{checks_count}
+💰 Новый баланс: {new_balance}
+
+🔖 Payment ID: <code>{payment_id[:8]}...</code>
+🕐 Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+"""
+    
+    await notifier.notify_all_admins(text)
+    logger.info(f"Admin notified about Stars payment from user {user_id}: {amount_stars} XTR")
+
+
+async def notify_admin_stars_payment_failed(
+    user_id: int,
+    username: str | None,
+    payment_id: str,
+    error_reason: str,
+    error_message: str | None,
+) -> None:
+    """Notify admins about a failed Telegram Stars payment."""
+    notifier = get_admin_notifier()
+    
+    user_mention = f"@{username}" if username else f"ID: {user_id}"
+    
+    text = f"""
+⚠️ <b>Ошибка платежа Telegram Stars</b>
+
+👤 Пользователь: {user_mention}
+🆔 User ID: <code>{user_id}</code>
+
+🔖 Payment ID: <code>{payment_id[:8]}...</code>
+❌ Причина: {error_reason}
+📝 Детали: {error_message or 'N/A'}
+
+🕐 Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+"""
+    
+    await notifier.notify_all_admins(text)
+    logger.warning(f"Admin notified about failed Stars payment for user {user_id}: {error_reason}")
+
+
+async def notify_admin_stars_payment_amount_mismatch(
+    user_id: int,
+    username: str | None,
+    payment_id: str,
+    expected_amount: int,
+    received_amount: int,
+) -> None:
+    """Notify admins about a Stars payment amount mismatch (potential fraud)."""
+    notifier = get_admin_notifier()
+    
+    user_mention = f"@{username}" if username else f"ID: {user_id}"
+    
+    text = f"""
+🚨 <b>ВНИМАНИЕ: Несовпадение суммы Stars!</b>
+
+👤 Пользователь: {user_mention}
+🆔 User ID: <code>{user_id}</code>
+
+🔖 Payment ID: <code>{payment_id[:8]}...</code>
+💵 Ожидалось: {expected_amount} ⭐
+💵 Получено: {received_amount} ⭐
+
+⚠️ Возможная попытка мошенничества!
+
+🕐 Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+"""
+    
+    await notifier.notify_all_admins(text)
+    logger.critical(
+        f"Admin notified about Stars amount mismatch for user {user_id}: "
+        f"expected={expected_amount}, received={received_amount}"
+    )
+

@@ -257,6 +257,97 @@ class RobokassaCallbackRequest(BaseModel):
     Shp_tariff_id: str | None = None
 
 
+# --- Telegram Stars Payment Schemas ---
+
+
+class TelegramStarsPaymentCreateRequest(BaseModel):
+    """Request schema for creating a Telegram Stars payment."""
+
+    user_id: int = Field(..., description="Telegram user ID")
+    tariff_id: uuid.UUID = Field(..., description="Tariff ID to purchase")
+
+
+class TelegramStarsPaymentCreateResponse(BaseModel):
+    """Response schema for creating a Telegram Stars payment."""
+
+    payment_id: uuid.UUID
+    user_id: int
+    tariff_id: uuid.UUID
+    tariff_name: str
+    tariff_description: str | None
+    checks_count: int
+    price_stars: int
+    currency: str = "XTR"
+    status: PaymentStatus
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TelegramStarsPaymentCompleteRequest(BaseModel):
+    """Request schema for completing a Telegram Stars payment."""
+
+    payment_id: uuid.UUID = Field(..., description="Payment ID from invoice payload")
+    telegram_payment_charge_id: str = Field(..., description="Charge ID from Telegram")
+    total_amount: int = Field(..., description="Total amount in stars")
+
+
+class TelegramStarsPaymentCompleteResponse(BaseModel):
+    """Response schema for completed Telegram Stars payment."""
+
+    payment_id: uuid.UUID
+    status: PaymentStatus
+    checks_added: int
+    user_checks_balance: int
+    completed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TelegramStarsPaymentFailedRequest(BaseModel):
+    """Request schema for marking a Telegram Stars payment as failed."""
+
+    payment_id: uuid.UUID = Field(..., description="Payment ID")
+    error_reason: str = Field(..., description="Reason for failure")
+    error_message: str | None = Field(default=None, description="Detailed error message")
+
+
+class TelegramStarsPaymentFailedResponse(BaseModel):
+    """Response schema for failed Telegram Stars payment."""
+
+    payment_id: uuid.UUID
+    status: PaymentStatus
+    error_reason: str
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentEventResponse(BaseModel):
+    """Response schema for payment event."""
+
+    event_id: uuid.UUID
+    payment_id: uuid.UUID
+    event_type: str
+    status_before: str | None
+    status_after: str | None
+    details: dict | None
+    error_message: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentEventsListResponse(BaseModel):
+    """Response schema for payment events list."""
+
+    events: list[PaymentEventResponse]
+    total: int
+
+
 # --- Referral Schemas ---
 
 

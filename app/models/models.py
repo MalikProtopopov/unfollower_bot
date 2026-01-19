@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy import Enum as SQLAlchemyEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -52,6 +52,18 @@ class PaymentStatusEnum(str, enum.Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class PaymentEventTypeEnum(str, enum.Enum):
+    """Payment event type enumeration for audit logging."""
+
+    CREATED = "created"
+    PRE_CHECKOUT = "pre_checkout"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    RETRY_SCHEDULED = "retry_scheduled"
+    RETRY_EXECUTED = "retry_executed"
 
 
 class User(Base):
@@ -254,9 +266,42 @@ class Payment(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="payments")
     tariff: Mapped["Tariff | None"] = relationship("Tariff", back_populates="payments")
+    events: Mapped[list["PaymentEvent"]] = relationship(
+        "PaymentEvent", back_populates="payment", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Payment(id={self.payment_id}, user={self.user_id}, amount={self.amount}, status={self.status})>"
+
+
+class PaymentEvent(Base):
+    """Payment event model for audit logging."""
+
+    __tablename__ = "payment_events"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.payment_id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[PaymentEventTypeEnum] = mapped_column(
+        SQLAlchemyEnum(PaymentEventTypeEnum, values_callable=lambda x: [e.value for e in x]),
+        nullable=False
+    )
+    status_before: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status_after: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="events")
+
+    def __repr__(self) -> str:
+        return f"<PaymentEvent(event_id={self.event_id}, type={self.event_type}, payment={self.payment_id})>"
 
 
 class Referral(Base):
