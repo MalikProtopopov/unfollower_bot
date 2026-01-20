@@ -1,7 +1,7 @@
 """Update tariff names and add 1 star tariff
 
-Revision ID: 13c6e0aa524b
-Revises: 128748f336e5
+Revision ID: 006
+Revises: 005
 Create Date: 2026-01-20 11:37:51.738443
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '13c6e0aa524b'
-down_revision: Union[str, None] = '128748f336e5'
+revision: str = '006'
+down_revision: Union[str, None] = '005'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

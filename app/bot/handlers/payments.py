@@ -2,29 +2,22 @@
 
 import uuid
 
-import httpx
 from aiogram import F, Router
 from aiogram.enums import ContentType
 from aiogram.types import LabeledPrice, Message, PreCheckoutQuery
 
-from app.config import get_settings
+from app.bot.http_client import APIError, api_post, pre_checkout_client
+from app.bot.utils import get_api_url
 from app.utils.logger import logger
 
 router = Router()
-settings = get_settings()
-
-
-def get_api_url(path: str) -> str:
-    """Get full API URL."""
-    base = settings.api_base_url.rstrip("/")
-    return f"{base}/api/v1{path}"
 
 
 # --- Pre-checkout Query Handler ---
 
 
 @router.pre_checkout_query()
-async def process_pre_checkout_query(pre_checkout: PreCheckoutQuery):
+async def process_pre_checkout_query(pre_checkout: PreCheckoutQuery) -> None:
     """Handle pre-checkout query from Telegram.
     
     This is called by Telegram before processing a payment.
@@ -49,30 +42,21 @@ async def process_pre_checkout_query(pre_checkout: PreCheckoutQuery):
         )
         return
     
-    # Validate payment via API
+    # Validate payment via API (use shorter timeout)
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:  # 8 seconds to stay within Telegram's 10s limit
-            response = await client.post(
-                get_api_url(f"/payments/telegram-stars/validate/{payment_id}"),
-                params={"expected_amount": total_amount},
-            )
-            
-            if response.status_code == 200:
-                logger.info(f"Payment {payment_id} validated for pre-checkout")
-                await pre_checkout.answer(ok=True)
-            else:
-                error_detail = response.json().get("detail", "Ошибка валидации платежа")
-                logger.warning(f"Payment validation failed: {error_detail}")
-                await pre_checkout.answer(
-                    ok=False,
-                    error_message=error_detail[:200],  # Telegram limits error message
-                )
+        await pre_checkout_client.post(
+            f"/payments/telegram-stars/validate/{payment_id}",
+            params={"expected_amount": total_amount},
+        )
+        logger.info(f"Payment {payment_id} validated for pre-checkout")
+        await pre_checkout.answer(ok=True)
                 
-    except httpx.TimeoutException:
-        logger.error(f"Timeout validating payment {payment_id}")
+    except APIError as e:
+        error_detail = e.detail or "Ошибка валидации платежа"
+        logger.warning(f"Payment validation failed: {error_detail}")
         await pre_checkout.answer(
             ok=False,
-            error_message="Превышено время ожидания. Попробуйте снова.",
+            error_message=error_detail[:200],  # Telegram limits error message
         )
     except Exception as e:
         logger.error(f"Error validating payment {payment_id}: {e}")
@@ -86,7 +70,7 @@ async def process_pre_checkout_query(pre_checkout: PreCheckoutQuery):
 
 
 @router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
-async def process_successful_payment(message: Message):
+async def process_successful_payment(message: Message) -> None:
     """Handle successful payment from Telegram.
     
     This is called after user completes the payment.
@@ -115,62 +99,47 @@ async def process_successful_payment(message: Message):
     
     # Complete payment via API
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                get_api_url("/payments/telegram-stars/complete"),
-                json={
-                    "payment_id": str(payment_id),
-                    "telegram_payment_charge_id": telegram_payment_charge_id,
-                    "total_amount": total_amount,
-                },
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                checks_added = result.get("checks_added", 0)
-                new_balance = result.get("user_checks_balance", 0)
-                
-                logger.info(
-                    f"Payment {payment_id} completed via API. "
-                    f"Checks added: {checks_added}, New balance: {new_balance}"
-                )
-                
-                # Send confirmation to user
-                await message.answer(
-                    f"✅ <b>Оплата успешно получена!</b>\n\n"
-                    f"Сумма: {total_amount} ⭐\n"
-                    f"Начислено проверок: <b>{checks_added}</b>\n"
-                    f"Ваш баланс: <b>{new_balance}</b> проверок\n\n"
-                    f"Теперь вы можете использовать команду /check для проверки аккаунтов.",
-                )
-                
-            elif response.status_code == 409:
-                # Payment already completed (idempotent case)
-                logger.warning(f"Payment {payment_id} already completed")
-                await message.answer(
-                    "✅ Этот платеж уже был обработан.\n\n"
-                    "Используйте /balance для проверки баланса."
-                )
-                
-            else:
-                error_detail = response.json().get("detail", "Unknown error")
-                logger.error(
-                    f"Error completing payment {payment_id}: "
-                    f"status={response.status_code}, detail={error_detail}"
-                )
-                await message.answer(
-                    f"❌ Ошибка при обработке платежа.\n\n"
-                    f"Код платежа: <code>{payment_id_str[:8]}...</code>\n"
-                    f"Пожалуйста, обратитесь в поддержку."
-                )
-                
-    except httpx.TimeoutException:
-        logger.error(f"Timeout completing payment {payment_id}")
-        await message.answer(
-            f"⏳ Обработка платежа занимает больше времени.\n\n"
-            f"Код платежа: <code>{payment_id_str[:8]}...</code>\n"
-            f"Баланс будет обновлен в ближайшее время."
+        result = await api_post(
+            "/payments/telegram-stars/complete",
+            json={
+                "payment_id": str(payment_id),
+                "telegram_payment_charge_id": telegram_payment_charge_id,
+                "total_amount": total_amount,
+            },
         )
+        
+        checks_added = result.get("checks_added", 0)
+        new_balance = result.get("user_checks_balance", 0)
+        
+        logger.info(
+            f"Payment {payment_id} completed via API. "
+            f"Checks added: {checks_added}, New balance: {new_balance}"
+        )
+        
+        # Send confirmation to user
+        await message.answer(
+            f"✅ <b>Оплата успешно получена!</b>\n\n"
+            f"Сумма: {total_amount} ⭐\n"
+            f"Начислено проверок: <b>{checks_added}</b>\n"
+            f"Ваш баланс: <b>{new_balance}</b> проверок\n\n"
+            f"Теперь вы можете использовать команду /check для проверки аккаунтов.",
+        )
+                
+    except APIError as e:
+        if e.status_code == 409:
+            # Payment already completed (idempotent case)
+            logger.warning(f"Payment {payment_id} already completed")
+            await message.answer(
+                "✅ Этот платеж уже был обработан.\n\n"
+                "Используйте /balance для проверки баланса."
+            )
+        else:
+            logger.error(f"Error completing payment {payment_id}: {e}")
+            await message.answer(
+                f"❌ Ошибка при обработке платежа.\n\n"
+                f"Код платежа: <code>{payment_id_str[:8]}...</code>\n"
+                f"Пожалуйста, обратитесь в поддержку."
+            )
     except Exception as e:
         logger.error(f"Exception completing payment {payment_id}: {e}")
         await message.answer(
@@ -190,7 +159,7 @@ async def send_stars_invoice(
     tariff_description: str | None,
     checks_count: int,
     price_stars: int,
-):
+) -> None:
     """Send invoice for Telegram Stars payment.
     
     Args:
@@ -208,7 +177,7 @@ async def send_stars_invoice(
         )
     ]
     
-    description = tariff_description or f"Пакет проверок для анализа Instagram аккаунтов"
+    description = tariff_description or "Пакет проверок для анализа Instagram аккаунтов"
     
     await message.bot.send_invoice(
         chat_id=message.chat.id,
@@ -224,4 +193,3 @@ async def send_stars_invoice(
         f"Invoice sent for payment {payment_id}: "
         f"tariff={tariff_name}, price={price_stars} XTR, user={message.from_user.id}"
     )
-

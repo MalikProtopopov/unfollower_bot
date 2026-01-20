@@ -9,7 +9,7 @@ router = Router()
 
 
 @router.callback_query(F.data.startswith("check_status:"))
-async def callback_check_status(callback: CallbackQuery):
+async def callback_check_status(callback: CallbackQuery) -> None:
     """Handle check status callback (placeholder for future use)."""
     check_id = callback.data.split(":")[1]
     await callback.answer(f"Статус проверки: {check_id[:8]}...")
@@ -17,7 +17,7 @@ async def callback_check_status(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("download:"))
-async def callback_download(callback: CallbackQuery):
+async def callback_download(callback: CallbackQuery) -> None:
     """Handle download callback (placeholder for future use)."""
     check_id = callback.data.split(":")[1]
     await callback.answer("Загрузка файла...")
@@ -25,8 +25,7 @@ async def callback_download(callback: CallbackQuery):
 
 
 @router.callback_query()
-async def callback_unknown(callback: CallbackQuery):
+async def callback_unknown(callback: CallbackQuery) -> None:
     """Handle unknown callbacks."""
     logger.warning(f"Unknown callback: {callback.data}")
     await callback.answer("Неизвестное действие")
-
