@@ -191,6 +191,61 @@ async def process_check(check_id: str):
             on_progress=lambda p, m: None,  # Sync callback, handle async separately
         )
 
+        # Update session last used timestamp
+        from app.services.session_service import update_session_last_used
+        if session_id:
+            await update_session_last_used(session_id)
+
+        # Detect suspicious/empty results (likely expired token or API error)
+        if len(followers) == 0 and len(following) == 0:
+            # Both lists empty - very suspicious, likely session expired
+            error_msg = "Не удалось получить данные Instagram. Попробуйте позже или обратитесь к менеджеру."
+            logger.error(
+                f"Check {check_id} detected empty results: 0 followers, 0 following. "
+                f"Likely session expired or API error."
+            )
+            
+            # Mark session as potentially invalid and notify admin
+            from app.services.session_service import mark_session_invalid
+            await mark_session_invalid(session_id)
+            await notify_admin_session_error()
+            
+            await update_check_status(
+                check_id,
+                status=CheckStatusEnum.FAILED,
+                error_message=error_msg,
+            )
+            # Refund balance - user shouldn't pay for failed check
+            await refund_check_balance(user_id, "EmptyResults: 0 followers and 0 following")
+            await notify_check_completed(check_id)
+            await notify_admin_check_error(
+                user_id, username, target_username, check_id,
+                "EmptyResults", "Received 0 followers and 0 following - possible session expiry"
+            )
+            return
+        
+        if len(followers) == 0 and len(following) > 0:
+            # Got following but no followers - API error or rate limiting
+            error_msg = "Ошибка при получении списка подписчиков. Попробуйте позже."
+            logger.error(
+                f"Check {check_id} detected partial results: 0 followers, {len(following)} following. "
+                f"Possible API error or rate limiting."
+            )
+            
+            await update_check_status(
+                check_id,
+                status=CheckStatusEnum.FAILED,
+                error_message=error_msg,
+            )
+            # Refund balance - incomplete data
+            await refund_check_balance(user_id, f"EmptyFollowers: 0 followers, {len(following)} following")
+            await notify_check_completed(check_id)
+            await notify_admin_check_error(
+                user_id, username, target_username, check_id,
+                "EmptyFollowers", f"Received 0 followers but {len(following)} following"
+            )
+            return
+
         # Update progress
         await update_check_status(check_id, progress=70)
 

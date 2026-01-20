@@ -337,3 +337,24 @@ class Referral(Base):
 
     def __repr__(self) -> str:
         return f"<Referral(referrer={self.referrer_user_id}, referred={self.referred_user_id})>"
+
+
+class InstagramSession(Base):
+    """Instagram session storage for persistent session management."""
+
+    __tablename__ = "instagram_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        masked = self.session_id[:8] + "..." if len(self.session_id) > 8 else "***"
+        return f"<InstagramSession(id={self.id}, session={masked}, active={self.is_active}, valid={self.is_valid})>"

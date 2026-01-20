@@ -8,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from app.bot.handlers import (
+    admin_router,
     balance_router,
     check_router,
     info_router,
@@ -37,17 +38,19 @@ async def main():
     dp = Dispatcher()
 
     # Register routers in order of priority
-    # 1. Payments router first for pre_checkout_query and successful_payment handlers
+    # 1. Admin router first (for admin commands)
+    dp.include_router(admin_router)
+    # 2. Payments router for pre_checkout_query and successful_payment handlers
     dp.include_router(payments_router)
-    # 2. Check router before start (has FSM states)
+    # 3. Check router before start (has FSM states)
     dp.include_router(check_router)
-    # 3. Balance router (buy, balance commands)
+    # 4. Balance router (buy, balance commands)
     dp.include_router(balance_router)
-    # 4. Referral router
+    # 5. Referral router
     dp.include_router(referral_router)
-    # 5. Info router (about, last, offer, privacy)
+    # 6. Info router (about, last, offer, privacy)
     dp.include_router(info_router)
-    # 6. Start router last (has fallback handler for unknown messages)
+    # 7. Start router last (has fallback handler for unknown messages)
     dp.include_router(start_router)
 
     logger.info("Starting Mutual Followers Bot...")

@@ -95,15 +95,42 @@ _session_id_override: str | None = None
 
 
 def get_instagram_session_id() -> str:
-    """Get current Instagram session ID (mutable)."""
+    """Get current Instagram session ID.
+    
+    Priority:
+    1. Database (active, valid session)
+    2. In-memory override (set via API)
+    3. .env fallback
+    
+    Returns:
+        Instagram session ID string, may be empty if not configured.
+    """
     global _session_id_override
+    
+    # Try database first (using cached sync access)
+    try:
+        from app.services.session_service import get_active_session_id_sync
+        db_session = get_active_session_id_sync()
+        if db_session:
+            return db_session
+    except Exception:
+        # Database not available yet (e.g., during startup)
+        pass
+    
+    # Fallback to in-memory override
     if _session_id_override is not None:
         return _session_id_override
+    
+    # Final fallback to .env
     return get_settings().instagram_session_id
 
 
 def set_instagram_session_id(session_id: str) -> None:
-    """Set Instagram session ID (mutable, without restart)."""
+    """Set Instagram session ID in memory (mutable, without restart).
+    
+    Note: For persistent storage, use session_service.save_session_id() instead.
+    This is kept for backwards compatibility with the API endpoint.
+    """
     global _session_id_override
     _session_id_override = session_id
 

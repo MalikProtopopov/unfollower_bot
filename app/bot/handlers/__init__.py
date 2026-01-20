@@ -7,8 +7,10 @@ This package contains all Telegram bot handlers split by functionality:
 - referral.py: /referral command
 - info.py: /about, /last commands, offer and privacy
 - payments.py: Telegram Stars payment handlers
+- admin.py: Admin commands for session management and stats
 """
 
+from app.bot.handlers.admin import router as admin_router
 from app.bot.handlers.balance import router as balance_router
 from app.bot.handlers.check import router as check_router
 from app.bot.handlers.info import router as info_router
@@ -17,6 +19,7 @@ from app.bot.handlers.referral import router as referral_router
 from app.bot.handlers.start import router as start_router
 
 __all__ = [
+    "admin_router",
     "start_router",
     "check_router",
     "balance_router",
