@@ -133,10 +133,15 @@ def get_check_error_keyboard() -> InlineKeyboardMarkup:
     """Get keyboard shown after check error.
     
     Returns:
-        InlineKeyboardMarkup with retry and main menu buttons
+        InlineKeyboardMarkup with retry, manager contact, and main menu buttons
     """
+    # Pre-filled message for manager
+    prefilled_message = "Здравствуйте! У меня возникла ошибка при проверке аккаунта Instagram. Прошу помочь разобраться."
+    manager_url = f"https://t.me/{get_manager_username()}?text={quote(prefilled_message)}"
+    
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Написать менеджеру", url=manager_url)],
             [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="start_check")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]

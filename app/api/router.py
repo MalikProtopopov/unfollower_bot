@@ -332,6 +332,39 @@ async def add_user_balance(
     }
 
 
+@router.post("/users/{user_id}/balance/refund")
+async def refund_user_balance(
+    user_id: int,
+    checks_count: int = 1,
+    reason: str | None = None,
+    session: Annotated[AsyncSession, Depends(get_session)] = None,
+):
+    """Refund checks to user's balance (used when check fails)."""
+    result = await session.execute(select(User).where(User.user_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User {user_id} not found",
+        )
+
+    user.checks_balance += checks_count
+    await session.commit()
+
+    logger.info(
+        f"Refunded {checks_count} check(s) to user {user_id}. "
+        f"Reason: {reason or 'check failed'}. New balance: {user.checks_balance}"
+    )
+
+    return {
+        "user_id": user.user_id,
+        "checks_refunded": checks_count,
+        "new_balance": user.checks_balance,
+        "reason": reason,
+    }
+
+
 # --- Queue Status Endpoint ---
 
 

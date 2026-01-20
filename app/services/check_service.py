@@ -28,6 +28,33 @@ from app.utils.logger import logger
 settings = get_settings()
 
 
+async def refund_check_balance(user_id: int, reason: str) -> bool:
+    """Refund one check to user's balance when check fails.
+    
+    Args:
+        user_id: User ID to refund
+        reason: Reason for refund
+        
+    Returns:
+        True if refund was successful
+    """
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(User).where(User.user_id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            user.checks_balance += 1
+            await session.commit()
+            logger.info(
+                f"Refunded 1 check to user {user_id}. "
+                f"Reason: {reason}. New balance: {user.checks_balance}"
+            )
+            return True
+        return False
+
+
 async def get_check_with_user(check_id: str) -> tuple[Check | None, User | None]:
     """Get check and associated user from database."""
     async with async_session_maker() as session:
@@ -222,6 +249,8 @@ async def process_check(check_id: str):
             status=CheckStatusEnum.FAILED,
             error_message=error_msg,
         )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"UserNotFound: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "UserNotFound", str(e))
 
@@ -233,6 +262,8 @@ async def process_check(check_id: str):
             status=CheckStatusEnum.FAILED,
             error_message=error_msg,
         )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"PrivateAccount: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "PrivateAccount", str(e))
 
@@ -244,6 +275,8 @@ async def process_check(check_id: str):
             status=CheckStatusEnum.FAILED,
             error_message=error_msg,
         )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"RateLimit: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "RateLimit", str(e))
 
@@ -267,6 +300,8 @@ async def process_check(check_id: str):
             status=CheckStatusEnum.FAILED,
             error_message=error_msg,
         )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"ScraperError: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "ScraperError", error_str)
 
@@ -288,6 +323,8 @@ async def process_check(check_id: str):
             status=CheckStatusEnum.FAILED,
             error_message=error_msg,
         )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"UnexpectedError: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "UnexpectedError", error_str)
 

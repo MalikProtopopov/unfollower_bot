@@ -209,6 +209,8 @@ async def notify_check_completed(check_id: str) -> bool:
 ⚠️ <b>Ошибка:</b>
 {error_message}
 
+✅ <b>Проверка возвращена на баланс</b> — вы не потеряли проверку.
+
 Если проблема повторяется, свяжитесь с менеджером — мы поможем решить вопрос!
 """
             # Inline keyboard with manager contact button
@@ -224,6 +226,12 @@ async def notify_check_completed(check_id: str) -> bool:
                         {
                             "text": "🔄 Попробовать снова",
                             "callback_data": "start_check"
+                        }
+                    ],
+                    [
+                        {
+                            "text": "🏠 Главное меню",
+                            "callback_data": "main_menu"
                         }
                     ]
                 ]
