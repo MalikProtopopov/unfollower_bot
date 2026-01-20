@@ -176,7 +176,9 @@ def get_referral_keyboard(referral_link: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="📤 Поделиться ссылкой",
-                    switch_inline_query=f"Проверь свои подписки в Instagram! {referral_link}",
+                    # Telegram автоматически добавляет @username бота в начало,
+                    # поэтому начинаем сразу с текста без упоминания
+                    switch_inline_query=f"Проверь свои подписки в Instagram!\n\n{referral_link}",
                 )
             ],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
