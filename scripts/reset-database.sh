@@ -26,16 +26,22 @@ echo ""
 echo "Stopping containers..."
 docker compose -f docker-compose.prod.yml --env-file .env.prod down
 
+echo "Starting PostgreSQL only..."
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres
+
+echo "Waiting for PostgreSQL to be ready..."
+sleep 10
+
 echo "Dropping database..."
-docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm postgres psql -U postgres -c "DROP DATABASE IF EXISTS mutual_followers;"
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS mutual_followers;"
 
 echo "Creating fresh database..."
-docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm postgres psql -U postgres -c "CREATE DATABASE mutual_followers;"
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres psql -U postgres -c "CREATE DATABASE mutual_followers;"
 
-echo "Starting services..."
+echo "Starting all services..."
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
-echo "Waiting for PostgreSQL..."
+echo "Waiting for services to be ready..."
 sleep 10
 
 echo "Applying all migrations from scratch..."
