@@ -206,7 +206,7 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     # Try to edit, fall back to delete+answer if message has no text (e.g., invoice)
     try:
-        await show_main_menu(callback.message, callback.from_user, edit=True)
+    await show_main_menu(callback.message, callback.from_user, edit=True)
     except Exception:
         try:
             await callback.message.delete()
@@ -222,7 +222,7 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext) -> None
     await state.clear()
     # Try to edit, fall back to delete+answer if message has no text (e.g., invoice)
     try:
-        await show_main_menu(callback.message, callback.from_user, edit=True)
+    await show_main_menu(callback.message, callback.from_user, edit=True)
     except Exception:
         try:
             await callback.message.delete()

@@ -1,6 +1,6 @@
-"""remove_test_trial_tariffs
+"""Remove test and trial tariffs
 
-Revision ID: f73d7ff2c911
+Revision ID: 007
 Revises: 006
 Create Date: 2026-01-20 12:55:32.285155
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f73d7ff2c911'
+revision: str = '007'
 down_revision: Union[str, None] = '006'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
