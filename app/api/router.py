@@ -291,6 +291,12 @@ async def get_user_balance(
             detail=f"User {user_id} not found",
         )
 
+    logger.info(
+        f"Balance request for user {user_id}: "
+        f"checks_balance={user.checks_balance}, "
+        f"referral_code={user.referral_code}"
+    )
+
     return UserBalanceResponse(
         user_id=user.user_id,
         checks_balance=user.checks_balance,

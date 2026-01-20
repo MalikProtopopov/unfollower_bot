@@ -327,6 +327,12 @@ async def cmd_balance(message: Message):
             
             response.raise_for_status()
             result = response.json()
+            
+            logger.info(
+                f"Balance API response for user {user_id}: "
+                f"checks_balance={result.get('checks_balance')}, "
+                f"referral_code={result.get('referral_code')}"
+            )
 
         balance = result.get("checks_balance", 0)
         
@@ -467,6 +473,15 @@ async def cmd_referral(message: Message):
             
             response.raise_for_status()
             stats = response.json()
+            
+            logger.info(
+                f"Referral stats API response for user {user_id}: "
+                f"total_referrals={stats.get('total_referrals')}, "
+                f"referrals_for_bonus={stats.get('referrals_for_bonus')}, "
+                f"bonus_progress={stats.get('bonus_progress')}, "
+                f"total_bonuses_earned={stats.get('total_bonuses_earned')}, "
+                f"full_response={stats}"
+            )
 
         referral_link = stats.get("referral_link", "")
         total = stats.get("total_referrals", 0)

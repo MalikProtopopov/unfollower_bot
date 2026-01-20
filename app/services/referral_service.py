@@ -170,7 +170,10 @@ async def get_referral_stats(user_id: int) -> dict:
         user = user_result.scalar_one_or_none()
         
         if not user:
+            logger.warning(f"User {user_id} not found in get_referral_stats")
             return None
+        
+        logger.info(f"Getting referral stats for user {user_id}, referral_code: {user.referral_code}")
         
         # Count total referrals
         total_result = await session.execute(
@@ -178,6 +181,16 @@ async def get_referral_stats(user_id: int) -> dict:
             .where(Referral.referrer_user_id == user_id)
         )
         total_referrals = total_result.scalar() or 0
+        
+        # Also check raw count for debugging
+        raw_count_result = await session.execute(
+            select(Referral).where(Referral.referrer_user_id == user_id)
+        )
+        raw_referrals = raw_count_result.scalars().all()
+        logger.info(
+            f"User {user_id} referral count: total_referrals={total_referrals}, "
+            f"raw_count={len(raw_referrals)}, referral_ids={[r.referral_id for r in raw_referrals]}"
+        )
         
         # Calculate progress
         required_count = settings.referral_required_count
@@ -190,7 +203,7 @@ async def get_referral_stats(user_id: int) -> dict:
         referral_code = user.referral_code or f"ref_{user_id}"
         referral_link = f"https://t.me/{bot_username}?start={referral_code}"
         
-        return {
+        result = {
             "user_id": user_id,
             "referral_code": referral_code,
             "referral_link": referral_link,
@@ -199,6 +212,10 @@ async def get_referral_stats(user_id: int) -> dict:
             "bonus_progress": bonus_progress,
             "total_bonuses_earned": total_bonuses,
         }
+        
+        logger.info(f"Returning referral stats for user {user_id}: {result}")
+        
+        return result
 
 
 async def get_referral_list(user_id: int, limit: int = 20, offset: int = 0) -> dict:
