@@ -97,6 +97,27 @@ services:
     networks:
       - app_network
 
+  admin_bot:
+    image: ${PROJECT_NAME:-nofollowbot}_backend:latest
+    container_name: ${PROJECT_NAME:-nofollowbot}_admin_bot_prod
+    restart: unless-stopped
+    command: python -m app.bot.admin_bot
+    env_file:
+      - .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mutual_followers}
+      API_BASE_URL: http://backend:8000
+      ENVIRONMENT: production
+      DEBUG: "False"
+    volumes:
+      - ./data/checks:/app/data/checks
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+
   worker:
     image: ${PROJECT_NAME:-nofollowbot}_backend:latest
     container_name: ${PROJECT_NAME:-nofollowbot}_worker_prod
