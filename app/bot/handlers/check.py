@@ -2,11 +2,13 @@
 
 import asyncio
 
+from typing import Optional
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message, User
 
 from app.bot.http_client import (
     APIError,
@@ -41,10 +43,12 @@ class CheckStates(StatesGroup):
 
 
 @router.message(Command("check"))
-async def cmd_check(message: Message, state: FSMContext) -> None:
+async def cmd_check(message: Message, state: FSMContext, user: Optional[User] = None) -> None:
     """Handle /check command - start check flow."""
     await state.clear()
-    user_id = message.from_user.id
+    if user is None:
+        user = message.from_user
+    user_id = user.id
 
     # Check balance first
     try:
@@ -120,7 +124,8 @@ async def process_username(message: Message, state: FSMContext) -> None:
 async def callback_start_check(callback: CallbackQuery, state: FSMContext) -> None:
     """Handle start check button from welcome message."""
     await callback.answer()
-    await cmd_check(callback.message, state)
+    # Pass the actual user who clicked, not the message author (which is the bot)
+    await cmd_check(callback.message, state, user=callback.from_user)
 
 
 # --- Confirm check callback ---

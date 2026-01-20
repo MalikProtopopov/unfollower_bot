@@ -1,8 +1,10 @@
 """Balance and buy command handlers."""
 
+from typing import Optional
+
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, User
 
 from app.bot.http_client import APIError, APINotFoundError, api_get, api_post
 from app.bot.keyboards import (
@@ -19,9 +21,11 @@ router = Router()
 
 
 @router.message(Command("balance"))
-async def cmd_balance(message: Message) -> None:
+async def cmd_balance(message: Message, user: Optional[User] = None) -> None:
     """Handle /balance command - show user's check balance."""
-    user_id = message.from_user.id
+    if user is None:
+        user = message.from_user
+    user_id = user.id
 
     try:
         result = await api_get(f"/users/{user_id}/balance")
@@ -70,7 +74,7 @@ async def cmd_buy(message: Message) -> None:
     await show_tariffs(message)
 
 
-async def show_tariffs(message: Message) -> None:
+async def show_tariffs(message: Message, user: Optional[User] = None) -> None:
     """Show available tariffs for purchase."""
     try:
         result = await api_get("/tariffs")
@@ -122,7 +126,8 @@ async def callback_balance(callback: CallbackQuery) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    await cmd_balance(callback.message)
+    # Pass the actual user who clicked, not the message author (which is the bot)
+    await cmd_balance(callback.message, user=callback.from_user)
 
 
 @router.callback_query(F.data == "buy")
@@ -133,7 +138,8 @@ async def callback_buy(callback: CallbackQuery) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    await show_tariffs(callback.message)
+    # Pass the actual user who clicked for consistent logging
+    await show_tariffs(callback.message, user=callback.from_user)
 
 
 # --- Buy tariff callback ---

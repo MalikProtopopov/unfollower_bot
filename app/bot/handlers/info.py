@@ -1,8 +1,10 @@
 """Info command handlers: about, last check, offer, privacy."""
 
+from typing import Optional
+
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message, User
 
 from app.bot.http_client import APIError, api_get
 from app.bot.keyboards import (
@@ -54,9 +56,11 @@ async def show_about(message: Message) -> None:
 
 
 @router.message(Command("last"))
-async def cmd_last(message: Message) -> None:
+async def cmd_last(message: Message, user: Optional[User] = None) -> None:
     """Handle /last command - get last check result."""
-    user_id = message.from_user.id
+    if user is None:
+        user = message.from_user
+    user_id = user.id
 
     try:
         # Get user's check history
@@ -154,7 +158,8 @@ async def callback_last_check(callback: CallbackQuery) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    await cmd_last(callback.message)
+    # Pass the actual user who clicked, not the message author (which is the bot)
+    await cmd_last(callback.message, user=callback.from_user)
 
 
 @router.callback_query(F.data == "public_offer")

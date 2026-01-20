@@ -1,8 +1,10 @@
 """Referral command handlers."""
 
+from typing import Optional
+
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, User
 
 from app.bot.http_client import APIError, APINotFoundError, api_get
 from app.bot.keyboards import get_back_to_main_keyboard, get_referral_keyboard
@@ -16,9 +18,11 @@ router = Router()
 
 
 @router.message(Command("referral"))
-async def cmd_referral(message: Message) -> None:
+async def cmd_referral(message: Message, user: Optional[User] = None) -> None:
     """Handle /referral command - show referral program info."""
-    user_id = message.from_user.id
+    if user is None:
+        user = message.from_user
+    user_id = user.id
 
     try:
         stats = await api_get("/referrals/stats", params={"user_id": user_id})
@@ -95,5 +99,6 @@ async def callback_referral(callback: CallbackQuery) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    await cmd_referral(callback.message)
+    # Pass the actual user who clicked, not the message author (which is the bot)
+    await cmd_referral(callback.message, user=callback.from_user)
 

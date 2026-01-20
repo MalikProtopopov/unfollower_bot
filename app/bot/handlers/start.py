@@ -204,7 +204,15 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext) -> N
     """Handle back to main menu button."""
     await callback.answer()
     await state.clear()
-    await show_main_menu(callback.message, callback.from_user, edit=True)
+    # Try to edit, fall back to delete+answer if message has no text (e.g., invoice)
+    try:
+        await show_main_menu(callback.message, callback.from_user, edit=True)
+    except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await show_main_menu(callback.message, callback.from_user, edit=False)
 
 
 @router.callback_query(F.data == "main_menu")
@@ -212,7 +220,15 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext) -> None
     """Handle main menu button."""
     await callback.answer()
     await state.clear()
-    await show_main_menu(callback.message, callback.from_user, edit=True)
+    # Try to edit, fall back to delete+answer if message has no text (e.g., invoice)
+    try:
+        await show_main_menu(callback.message, callback.from_user, edit=True)
+    except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await show_main_menu(callback.message, callback.from_user, edit=False)
 
 
 # --- Fallback handler for unknown messages ---
