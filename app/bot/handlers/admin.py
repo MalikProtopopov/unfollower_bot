@@ -12,6 +12,7 @@ from aiogram.types import Message
 
 from app.config import get_settings
 from app.services.session_service import (
+    get_active_session_id,
     get_all_sessions,
     get_session_info,
     save_session_id,
@@ -71,39 +72,24 @@ async def cmd_admin_set_session(message: Message) -> None:
         parse_mode="HTML"
     )
     
-    # Validate the session
-    is_valid, validation_message = await validate_session_id(new_session_id)
-    
-    if not is_valid:
-        await message.answer(
-            f"❌ <b>Токен невалиден!</b>\n\n"
-            f"Причина: {validation_message}\n\n"
-            f"Токен НЕ сохранён. Попробуйте получить новый session_id.",
-            parse_mode="HTML"
-        )
-        logger.warning(f"Admin {user_id} tried to set invalid session: {validation_message}")
-        return
-    
-    # Save to database
+    # Save to database directly without pre-validation
+    # Instagram API is unreliable for validation, real check happens on first use
     try:
         session = await save_session_id(
             session_id=new_session_id,
             notes=f"Set by admin {user_id} via Telegram"
         )
         
-        # Show validation status in message
-        validation_emoji = "✅" if "valid" in validation_message.lower() else "⚠️"
-        
         await message.answer(
-            f"{validation_emoji} <b>Токен установлен и сохранён!</b>\n\n"
+            f"✅ <b>Токен установлен и сохранён!</b>\n\n"
             f"🔑 Session: <code>{masked}</code>\n"
             f"🆔 ID в базе: {session.id}\n"
-            f"📅 Создан: {session.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-            f"🔍 Проверка: {validation_message}\n\n"
-            f"Токен будет использоваться для всех проверок.",
+            f"📅 Создан: {session.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Токен будет использоваться для всех проверок.\n"
+            f"Валидность проверится при первой проверке аккаунта.",
             parse_mode="HTML"
         )
-        logger.info(f"Admin {user_id} set new Instagram session (DB ID: {session.id}, validation: {validation_message})")
+        logger.info(f"Admin {user_id} set new Instagram session (DB ID: {session.id})")
         
     except Exception as e:
         await message.answer(
