@@ -4,6 +4,8 @@ Provides commands for admin users to manage Instagram sessions,
 view statistics, and perform administrative tasks.
 """
 
+from urllib.parse import unquote
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -52,7 +54,13 @@ async def cmd_admin_set_session(message: Message) -> None:
         )
         return
     
-    new_session_id = parts[1].strip()
+    # Decode URL-encoded session ID (handles %3A -> :, etc.)
+    raw_session_id = parts[1].strip()
+    new_session_id = unquote(raw_session_id)
+    
+    # Log if decoding changed the value
+    if raw_session_id != new_session_id:
+        logger.info(f"Decoded URL-encoded session ID (length: {len(new_session_id)})")
     
     # Mask for display
     masked = new_session_id[:8] + "..." + new_session_id[-4:] \
@@ -83,15 +91,19 @@ async def cmd_admin_set_session(message: Message) -> None:
             notes=f"Set by admin {user_id} via Telegram"
         )
         
+        # Show validation status in message
+        validation_emoji = "✅" if "valid" in validation_message.lower() else "⚠️"
+        
         await message.answer(
-            f"✅ <b>Токен установлен и сохранён!</b>\n\n"
+            f"{validation_emoji} <b>Токен установлен и сохранён!</b>\n\n"
             f"🔑 Session: <code>{masked}</code>\n"
             f"🆔 ID в базе: {session.id}\n"
-            f"📅 Создан: {session.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"📅 Создан: {session.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+            f"🔍 Проверка: {validation_message}\n\n"
             f"Токен будет использоваться для всех проверок.",
             parse_mode="HTML"
         )
-        logger.info(f"Admin {user_id} set new Instagram session (DB ID: {session.id})")
+        logger.info(f"Admin {user_id} set new Instagram session (DB ID: {session.id}, validation: {validation_message})")
         
     except Exception as e:
         await message.answer(
