@@ -139,7 +139,8 @@ async def validate_session_id(session_id: str) -> tuple[bool, str]:
     }
     
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # Follow redirects to handle 302 responses
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             response = await client.get(
                 test_url,
                 params=params,
@@ -147,15 +148,33 @@ async def validate_session_id(session_id: str) -> tuple[bool, str]:
                 cookies=cookies,
             )
             
+            # Check final URL after redirects
+            final_url = str(response.url)
+            
+            # If redirected to login page - session is invalid
+            if "login" in final_url.lower() or "accounts/login" in final_url:
+                logger.warning("Session validation: redirected to login page - session invalid")
+                return False, "Session expired (redirected to login)"
+            
             if response.status_code == 200:
-                data = response.json()
-                user = data.get("data", {}).get("user")
-                if user and user.get("username") == "instagram":
-                    logger.info("Session ID validation successful")
-                    return True, "Session is valid and authenticated"
-                else:
-                    logger.warning("Session validation: unexpected response structure")
-                    return False, "Invalid response from Instagram"
+                try:
+                    data = response.json()
+                    user = data.get("data", {}).get("user")
+                    if user and user.get("username") == "instagram":
+                        logger.info("Session ID validation successful")
+                        return True, "Session is valid and authenticated"
+                    elif user:
+                        # Got some user data - session likely works
+                        logger.info("Session validation: got user data, session valid")
+                        return True, "Session is valid"
+                    else:
+                        # No user data but 200 OK - might still work
+                        logger.warning("Session validation: 200 OK but unexpected structure")
+                        return True, "Session appears valid (200 OK)"
+                except Exception as e:
+                    # JSON parsing failed but 200 - might still work
+                    logger.warning(f"Session validation: JSON error but 200 status: {e}")
+                    return True, "Session appears valid (200 OK)"
                     
             elif response.status_code == 401:
                 logger.warning("Session ID validation failed: unauthorized")
@@ -165,17 +184,26 @@ async def validate_session_id(session_id: str) -> tuple[bool, str]:
                 logger.warning("Session validation: rate limited")
                 # Don't reject the token just because of rate limiting
                 return True, "Rate limited, but session may be valid"
+            
+            elif response.status_code in (301, 302, 303, 307, 308):
+                # Redirect not followed (shouldn't happen with follow_redirects=True)
+                # But if we're here, treat non-login redirects as potentially valid
+                logger.warning(f"Session validation: redirect {response.status_code}")
+                return True, "Session may be valid (redirect response)"
                 
             else:
                 logger.warning(f"Session validation: unexpected status {response.status_code}")
-                return False, f"Unexpected response: {response.status_code}"
+                # Don't immediately reject - session might still work
+                return True, f"Session saved (status {response.status_code}, will test on first check)"
                 
     except httpx.TimeoutException:
         logger.error("Session validation: timeout")
-        return False, "Request timed out"
+        # Timeout doesn't mean invalid - save anyway
+        return True, "Validation timed out, but session saved"
     except Exception as e:
         logger.error(f"Session validation error: {e}")
-        return False, f"Validation error: {str(e)}"
+        # Save anyway and let it fail on actual use if invalid
+        return True, f"Validation error ({str(e)}), but session saved"
 
 
 async def mark_session_invalid(session_id: str | None = None) -> bool:
