@@ -72,12 +72,18 @@ class APIClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             yield client
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Make GET request to API.
         
         Args:
             path: API path (e.g., "/users/123/balance")
             params: Optional query parameters
+            headers: Optional HTTP headers
             
         Returns:
             JSON response as dictionary
@@ -88,7 +94,7 @@ class APIClient:
         url = get_api_url(path)
         try:
             async with self._get_client() as client:
-                response = await client.get(url, params=params)
+                response = await client.get(url, params=params, headers=headers)
                 return self._handle_response(response)
         except httpx.TimeoutException as e:
             logger.error(f"Timeout on GET {url}: {e}")
@@ -178,17 +184,22 @@ pre_checkout_client = APIClient(timeout=PRE_CHECKOUT_TIMEOUT)
 
 
 # Convenience functions for simple use cases
-async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def api_get(
+    path: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Make GET request using default client.
     
     Args:
         path: API path
         params: Optional query parameters
+        headers: Optional HTTP headers
         
     Returns:
         JSON response
     """
-    return await api_client.get(path, params)
+    return await api_client.get(path, params, headers)
 
 
 async def api_post(
