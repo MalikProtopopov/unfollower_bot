@@ -4,12 +4,14 @@ Provides commands for admin users to manage Instagram sessions,
 view statistics, and perform administrative tasks.
 """
 
+from datetime import datetime
 from urllib.parse import unquote
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from app.bot.http_client import api_get
 from app.config import get_settings
 from app.services.session_service import (
     get_active_session_id,
@@ -275,12 +277,159 @@ async def cmd_admin_stats(message: Message) -> None:
         logger.error(f"Failed to get admin stats: {e}")
 
 
+# --- /admin_daily command ---
+
+
+@router.message(Command("admin_daily"))
+async def cmd_admin_daily(message: Message) -> None:
+    """Handle /admin_daily [DD.MM.YYYY] command.
+    
+    Shows daily statistics for a specific date.
+    If no date provided, shows today's stats.
+    """
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        await message.answer("⛔ У вас нет прав администратора.")
+        return
+    
+    # Parse optional date argument
+    parts = message.text.split(maxsplit=1)
+    target_date = None
+    display_date = "сегодня"
+    
+    if len(parts) > 1 and parts[1].strip():
+        date_str = parts[1].strip()
+        try:
+            # Parse DD.MM.YYYY format
+            parsed_date = datetime.strptime(date_str, "%d.%m.%Y")
+            target_date = parsed_date.strftime("%Y-%m-%d")
+            display_date = date_str
+        except ValueError:
+            await message.answer(
+                "❌ <b>Неверный формат даты!</b>\n\n"
+                "Используйте: <code>/admin_daily ДД.ММ.ГГГГ</code>\n"
+                "Пример: <code>/admin_daily 20.01.2026</code>",
+                parse_mode="HTML"
+            )
+            return
+    
+    await message.answer(f"⏳ Загружаю статистику за {display_date}...")
+    
+    try:
+        params = {}
+        if target_date:
+            params["target_date"] = target_date
+        
+        stats = await api_get(
+            "/admin/stats/daily",
+            params=params,
+            headers={"X-User-Id": str(user_id)}
+        )
+        
+        # Format display date from response
+        resp_date = stats.get("date", display_date)
+        try:
+            formatted_date = datetime.strptime(resp_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+        except ValueError:
+            formatted_date = resp_date
+        
+        text = f"""
+📊 <b>Статистика за {formatted_date}</b>
+
+👥 Новых пользователей: <b>{stats['new_users_count']}</b>
+🛒 Куплено проверок: <b>{stats['checks_purchased']}</b>
+✅ Выполнено проверок: <b>{stats['checks_completed']}</b>
+⭐ Получено звёзд: <b>{stats['stars_received']}</b> XTR
+💵 Получено рублей: <b>{stats['rubles_received']:.2f}</b> ₽
+❌ Неудачных проверок: <b>{stats['checks_failed']}</b>
+"""
+        await message.answer(text, parse_mode="HTML")
+        
+    except Exception as e:
+        await message.answer(
+            f"❌ <b>Ошибка при получении статистики:</b>\n{str(e)}",
+            parse_mode="HTML"
+        )
+        logger.error(f"Failed to get daily stats: {e}")
+
+
+# --- /admin_failed command ---
+
+
+@router.message(Command("admin_failed"))
+async def cmd_admin_failed(message: Message) -> None:
+    """Handle /admin_failed command.
+    
+    Shows list of failed checks with user information.
+    """
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        await message.answer("⛔ У вас нет прав администратора.")
+        return
+    
+    await message.answer("⏳ Загружаю список неудачных проверок...")
+    
+    try:
+        data = await api_get(
+            "/admin/checks/failed",
+            params={"limit": 15},
+            headers={"X-User-Id": str(user_id)}
+        )
+        
+        failed_checks = data.get("failed_checks", [])
+        
+        if not failed_checks:
+            await message.answer(
+                "✅ <b>Нет неудачных проверок!</b>\n\n"
+                "Все проверки прошли успешно.",
+                parse_mode="HTML"
+            )
+            return
+        
+        text = "❌ <b>Последние неудачные проверки</b>\n\n"
+        
+        for i, check in enumerate(failed_checks, 1):
+            user_tg = check.get("user_username", "unknown")
+            target_insta = check.get("target_username", "unknown")
+            error = check.get("error_message", "Unknown error")
+            created_at = check.get("created_at", "")
+            
+            # Format datetime
+            try:
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                formatted_dt = dt.strftime("%d.%m.%Y %H:%M")
+            except (ValueError, AttributeError):
+                formatted_dt = created_at[:16] if created_at else "N/A"
+            
+            # Truncate long error messages
+            if len(error) > 50:
+                error = error[:47] + "..."
+            
+            text += f"<b>{i}.</b> @{user_tg} → @{target_insta}\n"
+            text += f"   📅 {formatted_dt}\n"
+            text += f"   💬 {error}\n\n"
+        
+        text += f"<i>Показано {len(failed_checks)} из последних проверок</i>"
+        
+        await message.answer(text, parse_mode="HTML")
+        
+    except Exception as e:
+        await message.answer(
+            f"❌ <b>Ошибка при получении данных:</b>\n{str(e)}",
+            parse_mode="HTML"
+        )
+        logger.error(f"Failed to get failed checks: {e}")
+
+
 # --- /admin_help command ---
 
 
 @router.message(Command("admin_help"))
+@router.message(Command("help"))
 async def cmd_admin_help(message: Message) -> None:
-    """Handle /admin_help command.
+    """Handle /admin_help and /help commands.
     
     Shows available admin commands.
     """
@@ -299,10 +448,13 @@ async def cmd_admin_help(message: Message) -> None:
 • /admin_sessions — история сессий
 
 <b>Статистика:</b>
-• /admin_stats — статистика бота
+• /admin_stats — общая статистика бота
+• /admin_daily [ДД.ММ.ГГГГ] — статистика за день
+• /admin_failed — список неудачных проверок
 
 <b>Справка:</b>
 • /admin_help — эта справка
+• /help — эта справка
 
 <i>Для получения session_id:</i>
 1. Войдите в Instagram через браузер

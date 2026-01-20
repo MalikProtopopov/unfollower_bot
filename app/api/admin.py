@@ -1,15 +1,16 @@
 """FastAPI router for admin endpoints."""
 
+from datetime import date, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_instagram_session_id, get_settings, set_instagram_session_id
 from app.models.database import get_session
-from app.models.models import Check, CheckStatusEnum, Payment, PaymentStatusEnum, User
+from app.models.models import Check, CheckStatusEnum, Payment, PaymentMethodEnum, PaymentStatusEnum, User
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -181,6 +182,148 @@ async def get_admin_stats(
         "instagram": {
             "session_status": session_status,
         },
+    }
+
+
+@router.get("/stats/daily")
+async def get_daily_stats(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    admin_id: int = Depends(verify_admin),
+    target_date: str | None = Query(None, description="Date in YYYY-MM-DD format"),
+):
+    """Get statistics for a specific day.
+    
+    If no date is provided, returns today's statistics.
+    """
+    # Parse date or use today
+    if target_date:
+        try:
+            stats_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD",
+            )
+    else:
+        stats_date = date.today()
+    
+    # Date range for the day (00:00:00 to 23:59:59)
+    day_start = datetime.combine(stats_date, datetime.min.time())
+    day_end = datetime.combine(stats_date, datetime.max.time())
+    
+    # New users count
+    new_users_result = await session.execute(
+        select(func.count(User.user_id))
+        .where(and_(
+            User.created_at >= day_start,
+            User.created_at <= day_end
+        ))
+    )
+    new_users_count = new_users_result.scalar() or 0
+    
+    # Checks purchased (from completed payments)
+    checks_purchased_result = await session.execute(
+        select(func.coalesce(func.sum(Payment.checks_count), 0))
+        .where(and_(
+            Payment.status == PaymentStatusEnum.COMPLETED,
+            Payment.completed_at >= day_start,
+            Payment.completed_at <= day_end
+        ))
+    )
+    checks_purchased = int(checks_purchased_result.scalar() or 0)
+    
+    # Completed checks
+    checks_completed_result = await session.execute(
+        select(func.count(Check.check_id))
+        .where(and_(
+            Check.status == CheckStatusEnum.COMPLETED,
+            Check.completed_at >= day_start,
+            Check.completed_at <= day_end
+        ))
+    )
+    checks_completed = checks_completed_result.scalar() or 0
+    
+    # Stars received (Telegram Stars payments)
+    stars_result = await session.execute(
+        select(func.coalesce(func.sum(Payment.amount), 0))
+        .where(and_(
+            Payment.payment_method == PaymentMethodEnum.TELEGRAM_STARS,
+            Payment.status == PaymentStatusEnum.COMPLETED,
+            Payment.completed_at >= day_start,
+            Payment.completed_at <= day_end
+        ))
+    )
+    stars_received = int(stars_result.scalar() or 0)
+    
+    # Rubles received (non-Telegram Stars payments with RUB currency)
+    rubles_result = await session.execute(
+        select(func.coalesce(func.sum(Payment.amount), 0))
+        .where(and_(
+            Payment.payment_method != PaymentMethodEnum.TELEGRAM_STARS,
+            Payment.currency == "RUB",
+            Payment.status == PaymentStatusEnum.COMPLETED,
+            Payment.completed_at >= day_start,
+            Payment.completed_at <= day_end
+        ))
+    )
+    rubles_received = float(rubles_result.scalar() or 0)
+    
+    # Failed checks
+    checks_failed_result = await session.execute(
+        select(func.count(Check.check_id))
+        .where(and_(
+            Check.status == CheckStatusEnum.FAILED,
+            Check.created_at >= day_start,
+            Check.created_at <= day_end
+        ))
+    )
+    checks_failed = checks_failed_result.scalar() or 0
+    
+    return {
+        "date": stats_date.isoformat(),
+        "new_users_count": new_users_count,
+        "checks_purchased": checks_purchased,
+        "checks_completed": checks_completed,
+        "stars_received": stars_received,
+        "rubles_received": rubles_received,
+        "checks_failed": checks_failed,
+    }
+
+
+# --- Failed Checks ---
+
+
+@router.get("/checks/failed")
+async def get_failed_checks(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    admin_id: int = Depends(verify_admin),
+    limit: int = Query(20, ge=1, le=100, description="Number of results"),
+):
+    """Get list of failed checks with user information."""
+    result = await session.execute(
+        select(Check, User)
+        .join(User, Check.user_id == User.user_id)
+        .where(Check.status == CheckStatusEnum.FAILED)
+        .order_by(Check.created_at.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+    
+    failed_checks = []
+    for check, user in rows:
+        failed_checks.append({
+            "check_id": str(check.check_id),
+            "user_id": user.user_id,
+            "user_username": user.username or f"id:{user.user_id}",
+            "user_first_name": user.first_name,
+            "target_username": check.target_username,
+            "error_message": check.error_message or "Unknown error",
+            "created_at": check.created_at.isoformat() if check.created_at else None,
+        })
+    
+    return {
+        "failed_checks": failed_checks,
+        "count": len(failed_checks),
     }
 
 
