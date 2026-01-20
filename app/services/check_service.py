@@ -171,11 +171,11 @@ async def process_check(check_id: str):
     # Get current session ID (mutable)
     session_id = get_instagram_session_id()
     
-    # Initialize scraper
+    # Initialize scraper with slower delays to avoid Instagram blocking
     scraper = InstagramScraper(
         session_id=session_id if session_id else None,
         max_retries=3,
-        delay_range=(2.0, 5.0),
+        delay_range=(4.0, 8.0),  # Increased delays to prevent account blocking
     )
 
     try:

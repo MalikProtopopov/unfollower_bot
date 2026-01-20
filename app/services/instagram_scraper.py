@@ -417,8 +417,9 @@ class InstagramScraper:
             on_progress=lambda p, c, t: on_progress(10 + p * 0.4, f"Followers: {c}/{t}") if on_progress else None,
         )
 
-        # Small delay between requests to avoid rate limiting
-        await asyncio.sleep(3)
+        # Delay between fetching followers and following to avoid rate limiting
+        # Increased delay to prevent Instagram account blocking
+        await asyncio.sleep(6)
 
         # Fetch following using same user_id
         if on_progress:
