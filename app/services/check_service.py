@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.config import get_instagram_session_id, get_settings
+from app.config import get_settings
 from app.models.database import async_session_maker
+from app.services.session_service import get_active_session_id
 from app.models.models import Check, CheckStatusEnum, FileTypeEnum, NonMutualUser, User
 from app.services.admin_notification_service import (
     notify_admin_check_completed,
@@ -168,8 +169,20 @@ async def process_check(check_id: str):
     # Update status to processing
     await update_check_status(check_id, status=CheckStatusEnum.PROCESSING, progress=0)
 
-    # Get current session ID (mutable)
-    session_id = get_instagram_session_id()
+    # Get current session ID from database (async, always fresh)
+    session_id = await get_active_session_id()
+    
+    if not session_id:
+        # Fallback to .env if database has no active session
+        session_id = settings.instagram_session_id
+        logger.warning("No active session in DB, using .env fallback")
+    
+    # Log session usage (masked for security)
+    if session_id:
+        masked = session_id[:8] + "..." + session_id[-4:] if len(session_id) > 12 else "***"
+        logger.info(f"Check {check_id} using session: {masked}")
+    else:
+        logger.warning(f"Check {check_id} starting WITHOUT session - will likely fail for private accounts")
     
     # Initialize scraper with slower delays to avoid Instagram blocking
     scraper = InstagramScraper(
@@ -347,7 +360,11 @@ async def process_check(check_id: str):
         
         if is_session_error:
             error_msg = "Ошибка авторизации Instagram. Мы уже работаем над решением проблемы."
-            # Notify admins about session issue
+            # Mark session as invalid and notify admin
+            from app.services.session_service import mark_session_invalid
+            if session_id:
+                await mark_session_invalid(session_id)
+                logger.warning(f"Marked session as invalid due to auth error")
             await notify_admin_session_error()
         
         await update_check_status(
