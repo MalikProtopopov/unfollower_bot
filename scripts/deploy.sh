@@ -39,11 +39,42 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache 
 
 # Step 3: Run database migrations
 step "Running database migrations..."
-docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm migrations
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm migrations alembic upgrade head
 
 if [ $? -ne 0 ]; then
     warn "Migrations failed or no new migrations to apply"
 fi
+
+# Step 3.5: Verify tariffs after migration
+step "Verifying tariffs in database..."
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres psql -U postgres mutual_followers -c "
+SELECT 
+    name, 
+    checks_count, 
+    price_stars, 
+    is_active,
+    sort_order
+FROM tariffs 
+WHERE is_active = true 
+ORDER BY sort_order, price_stars;
+" || warn "Could not query tariffs"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Check for test/trial tariffs
+TEST_COUNT=$(docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres psql -U postgres mutual_followers -t -c "
+SELECT COUNT(*) 
+FROM tariffs 
+WHERE name IN ('Test', 'Test Pack', 'Trial', 'Тест: 1 проверка', 'Тест: 3 проверки', '1 проверка (тест)', '3 проверки (тест)');
+" 2>/dev/null | tr -d ' ' || echo "0")
+
+if [ "$TEST_COUNT" = "0" ] || [ -z "$TEST_COUNT" ]; then
+    info "✅ Test/trial tariffs successfully removed!"
+else
+    warn "⚠️  Found $TEST_COUNT test/trial tariff(s) in database"
+fi
+echo ""
 
 # Step 4: Restart services
 step "Restarting services..."
