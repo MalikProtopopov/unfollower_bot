@@ -380,6 +380,11 @@ async def show_tariffs(message: Message):
 
         tariffs = result.get("tariffs", [])
         
+        logger.info(
+            f"Tariffs loaded: total={len(tariffs)}, "
+            f"names={[t.get('name') for t in tariffs]}"
+        )
+        
         if not tariffs:
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
