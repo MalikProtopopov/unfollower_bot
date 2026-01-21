@@ -356,16 +356,25 @@ async def process_check(check_id: str):
             f"Check processing terminated immediately due to 401 Unauthorized error."
         )
         
-        # Mark session as invalid and notify admin immediately
+        # Mark session as invalid
         from app.services.session_service import mark_session_invalid
         if session_id:
             await mark_session_invalid(session_id)
             logger.warning(f"Marked session {session_id[:8]}... as invalid due to 401 error")
         
-        # Send critical notification to admin about session expiry
-        await notify_admin_session_error()
+        # Trigger reactive refresh task (auto-refresh session)
+        try:
+            from app.tasks.session_tasks import reactive_refresh_task
+            logger.info("Triggering reactive session refresh task...")
+            await reactive_refresh_task.kiq()
+            logger.info("Reactive refresh task scheduled")
+        except Exception as refresh_err:
+            logger.warning(f"Could not trigger reactive refresh task: {refresh_err}")
+            # Fallback: notify admin manually
+            await notify_admin_session_error()
+        
         logger.critical(
-            f"Instagram session token expired! Admin notified. "
+            f"Instagram session token expired! Reactive refresh triggered. "
             f"Check {check_id} for user {user_id} (@{target_username}) was stopped mid-processing."
         )
         

@@ -354,7 +354,83 @@ class InstagramSession(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # New fields for auto-refresh
+    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_attempts: Mapped[int] = mapped_column(Integer, default=0)
 
     def __repr__(self) -> str:
         masked = self.session_id[:8] + "..." if len(self.session_id) > 8 else "***"
         return f"<InstagramSession(id={self.id}, session={masked}, active={self.is_active}, valid={self.is_valid})>"
+
+
+class RefreshCredentials(Base):
+    """Instagram credentials for automatic session refresh."""
+
+    __tablename__ = "refresh_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # AES-256 encrypted
+    totp_secret: Mapped[str | None] = mapped_column(Text, nullable=True)  # For 2FA (encrypted)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<RefreshCredentials(id={self.id}, username={self.username}, active={self.is_active})>"
+
+
+class CheckProgressStatusEnum(str, enum.Enum):
+    """Check progress status enumeration."""
+
+    IN_PROGRESS = "in_progress"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class CheckProgress(Base):
+    """Check progress storage for resume functionality."""
+
+    __tablename__ = "check_progress"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    check_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("checks.check_id", ondelete="CASCADE"), nullable=False
+    )
+    
+    # Pagination cursors
+    followers_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    following_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Progress counts
+    followers_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    following_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Cached data (JSON)
+    followers_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    following_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    
+    # Status
+    status: Mapped[CheckProgressStatusEnum] = mapped_column(
+        SQLAlchemyEnum(CheckProgressStatusEnum, values_callable=lambda x: [e.value for e in x]),
+        default=CheckProgressStatusEnum.IN_PROGRESS
+    )
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_update_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<CheckProgress(id={self.id}, check_id={self.check_id}, followers={self.followers_fetched}, following={self.following_fetched})>"

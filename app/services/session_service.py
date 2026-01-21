@@ -287,6 +287,11 @@ async def get_session_info() -> dict | None:
             "last_used_at": ig_session.last_used_at.isoformat() if ig_session.last_used_at else None,
             "last_verified_at": ig_session.last_verified_at.isoformat() if ig_session.last_verified_at else None,
             "notes": ig_session.notes,
+            # Auto-refresh fields
+            "next_refresh_at": ig_session.next_refresh_at.isoformat() if hasattr(ig_session, 'next_refresh_at') and ig_session.next_refresh_at else None,
+            "fail_count": getattr(ig_session, 'fail_count', 0),
+            "last_error": getattr(ig_session, 'last_error', None),
+            "refresh_attempts": getattr(ig_session, 'refresh_attempts', 0),
         }
 
 

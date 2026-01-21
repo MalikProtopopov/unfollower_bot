@@ -101,6 +101,167 @@ async def clear_session(admin_id: int = Depends(verify_admin)):
     return {"message": "Session ID cleared"}
 
 
+# --- Session Auto-Refresh ---
+
+
+class CredentialsRequest(BaseModel):
+    """Request schema for setting Instagram credentials."""
+    username: str
+    password: str
+    totp_secret: str | None = None
+
+
+class RefreshStatusResponse(BaseModel):
+    """Response schema for session refresh status."""
+    has_credentials: bool
+    credentials_username: str | None
+    session_active: bool
+    session_valid: bool
+    next_refresh_at: str | None
+    fail_count: int
+    last_error: str | None
+
+
+@router.get("/session/refresh-status", response_model=RefreshStatusResponse)
+async def get_refresh_status(admin_id: int = Depends(verify_admin)):
+    """Get status of automatic session refresh system."""
+    from app.services.session_refresh_service import get_refresh_service
+    from app.services.session_service import get_session_info
+    
+    # Get credentials status
+    refresh_service = get_refresh_service()
+    credentials = await refresh_service.get_active_credentials()
+    
+    # Get session info
+    session_info = await get_session_info()
+    
+    return RefreshStatusResponse(
+        has_credentials=credentials is not None,
+        credentials_username=credentials.username if credentials else None,
+        session_active=session_info.get("is_active", False) if session_info else False,
+        session_valid=session_info.get("is_valid", False) if session_info else False,
+        next_refresh_at=session_info.get("next_refresh_at") if session_info else None,
+        fail_count=0,  # TODO: get from session
+        last_error=session_info.get("last_error") if session_info else None,
+    )
+
+
+@router.post("/session/credentials")
+async def set_credentials(
+    request: CredentialsRequest,
+    admin_id: int = Depends(verify_admin),
+):
+    """Set Instagram credentials for automatic session refresh.
+    
+    Credentials are encrypted before storage.
+    """
+    from app.services.session_refresh_service import get_refresh_service
+    
+    refresh_service = get_refresh_service()
+    
+    try:
+        credentials = await refresh_service.save_credentials(
+            username=request.username,
+            password=request.password,
+            totp_secret=request.totp_secret,
+        )
+        
+        logger.info(f"Admin {admin_id} set credentials for {request.username}")
+        
+        return {
+            "message": "Credentials saved successfully",
+            "username": request.username,
+            "has_totp": request.totp_secret is not None,
+        }
+    except Exception as e:
+        logger.error(f"Failed to save credentials: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save credentials: {str(e)}",
+        )
+
+
+@router.post("/session/refresh")
+async def trigger_refresh(admin_id: int = Depends(verify_admin)):
+    """Manually trigger session refresh.
+    
+    This will attempt to login to Instagram and get a new session.
+    """
+    from app.tasks.session_tasks import manual_refresh_task
+    
+    logger.info(f"Admin {admin_id} triggered manual session refresh")
+    
+    try:
+        # Trigger the task
+        task = await manual_refresh_task.kiq()
+        
+        return {
+            "message": "Session refresh task triggered",
+            "task_id": str(task.task_id) if hasattr(task, 'task_id') else None,
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger refresh task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger refresh: {str(e)}",
+        )
+
+
+@router.post("/session/refresh-sync")
+async def trigger_refresh_sync(admin_id: int = Depends(verify_admin)):
+    """Trigger synchronous session refresh (blocks until complete).
+    
+    Use this for immediate feedback. For background refresh, use /session/refresh.
+    """
+    from app.services.session_refresh_service import get_refresh_service
+    
+    logger.info(f"Admin {admin_id} triggered synchronous session refresh")
+    
+    refresh_service = get_refresh_service()
+    
+    try:
+        success, message = await refresh_service.refresh_session()
+        
+        if success:
+            return {
+                "status": "success",
+                "message": message,
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": message,
+            }
+    except Exception as e:
+        logger.error(f"Sync refresh failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Refresh failed: {str(e)}",
+        )
+    finally:
+        await refresh_service.close()
+
+
+@router.delete("/session/credentials")
+async def clear_credentials(admin_id: int = Depends(verify_admin)):
+    """Clear saved Instagram credentials."""
+    from sqlalchemy import update
+    from app.models.database import async_session_maker
+    from app.models.models import RefreshCredentials
+    
+    async with async_session_maker() as session:
+        await session.execute(
+            update(RefreshCredentials)
+            .where(RefreshCredentials.is_active == True)
+            .values(is_active=False)
+        )
+        await session.commit()
+    
+    logger.info(f"Admin {admin_id} cleared credentials")
+    
+    return {"message": "Credentials cleared"}
+
+
 # --- Statistics ---
 
 

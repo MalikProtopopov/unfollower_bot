@@ -26,3 +26,12 @@ python-dotenv==1.0.0
 # Utilities
 aiofiles==23.2.1
 
+# Session Refresh (Auto-update Instagram session)
+playwright==1.41.0
+pyotp==2.9.0
+cryptography==42.0.0
+
+# Background Tasks (TaskIQ instead of Celery)
+taskiq==0.11.6
+taskiq-redis==1.0.0
+redis==5.0.1

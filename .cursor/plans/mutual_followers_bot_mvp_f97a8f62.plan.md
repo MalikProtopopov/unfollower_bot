@@ -110,8 +110,6 @@ mutual-followers-analyzer/
 └── logs/
 ```
 
-
-
 ### 1.2 Зависимости (pyproject.toml)
 
 - fastapi, uvicorn
@@ -272,8 +270,6 @@ INSTAGRAM_SESSION_ID=...  # опционально для авторизован
 UPLOAD_DIR=./data/checks
 DEBUG=True
 ```
-
-
 
 ### 7.2 Docker запуск
 
