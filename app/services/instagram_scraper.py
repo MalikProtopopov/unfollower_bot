@@ -49,6 +49,12 @@ class RateLimitError(InstagramScraperError):
     pass
 
 
+class SessionExpiredError(InstagramScraperError):
+    """Instagram session expired or invalid (401 Unauthorized)."""
+
+    pass
+
+
 class InstagramScraper:
     """Instagram GraphQL scraper for fetching user data."""
 
@@ -163,6 +169,10 @@ class InstagramScraper:
 
                 response = await client.get(url, params=params)
 
+                if response.status_code == 401:
+                    logger.error(f"Session expired (401 Unauthorized) on attempt {attempt + 1}")
+                    raise SessionExpiredError("Instagram session expired or invalid (401 Unauthorized)")
+
                 if response.status_code == 429:
                     logger.warning(f"Rate limited on attempt {attempt + 1}")
                     raise RateLimitError("Instagram rate limit exceeded")
@@ -175,6 +185,8 @@ class InstagramScraper:
                 data = response.json()
                 return data
 
+            except SessionExpiredError:
+                raise
             except RateLimitError:
                 raise
             except UserNotFoundError:
@@ -304,6 +316,13 @@ class InstagramScraper:
 
                 logger.info(f"Fetched {len(users)} {connection_type} users")
 
+            except SessionExpiredError:
+                logger.error(
+                    f"Session expired while fetching {connection_type}. "
+                    f"Stopping fetch operation immediately. "
+                    f"Already fetched {len(users)} users before session expiry."
+                )
+                raise
             except RateLimitError:
                 logger.error("Rate limit hit while fetching connections")
                 break

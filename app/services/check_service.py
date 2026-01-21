@@ -21,6 +21,7 @@ from app.services.instagram_scraper import (
     InstagramScraperError,
     PrivateAccountError,
     RateLimitError,
+    SessionExpiredError,
     UserNotFoundError,
 )
 from app.services.notification_service import notify_check_completed
@@ -347,6 +348,36 @@ async def process_check(check_id: str):
         await refund_check_balance(user_id, f"RateLimit: {target_username}")
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "RateLimit", str(e))
+
+    except SessionExpiredError as e:
+        error_msg = "Ошибка авторизации Instagram. Мы уже работаем над решением проблемы."
+        logger.error(
+            f"Check {check_id} STOPPED: Session expired during processing - {e}. "
+            f"Check processing terminated immediately due to 401 Unauthorized error."
+        )
+        
+        # Mark session as invalid and notify admin immediately
+        from app.services.session_service import mark_session_invalid
+        if session_id:
+            await mark_session_invalid(session_id)
+            logger.warning(f"Marked session {session_id[:8]}... as invalid due to 401 error")
+        
+        # Send critical notification to admin about session expiry
+        await notify_admin_session_error()
+        logger.critical(
+            f"Instagram session token expired! Admin notified. "
+            f"Check {check_id} for user {user_id} (@{target_username}) was stopped mid-processing."
+        )
+        
+        await update_check_status(
+            check_id,
+            status=CheckStatusEnum.FAILED,
+            error_message=error_msg,
+        )
+        # Refund balance since check failed
+        await refund_check_balance(user_id, f"SessionExpired: {target_username}")
+        await notify_check_completed(check_id)
+        await notify_admin_check_error(user_id, username, target_username, check_id, "SessionExpired", str(e))
 
     except InstagramScraperError as e:
         error_str = str(e)
