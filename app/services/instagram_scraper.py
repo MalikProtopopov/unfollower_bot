@@ -55,6 +55,20 @@ class SessionExpiredError(InstagramScraperError):
     pass
 
 
+class IncompleteDataError(InstagramScraperError):
+    """Data fetch was interrupted and results are incomplete.
+    
+    This error is raised when rate limiting or other errors occur
+    mid-fetch, resulting in partial data that should not be used
+    for comparison (would produce incorrect results).
+    """
+
+    def __init__(self, message: str, fetched_count: int, connection_type: str):
+        self.fetched_count = fetched_count
+        self.connection_type = connection_type
+        super().__init__(message)
+
+
 class InstagramScraper:
     """Instagram GraphQL scraper for fetching user data."""
 
@@ -323,12 +337,28 @@ class InstagramScraper:
                     f"Already fetched {len(users)} users before session expiry."
                 )
                 raise
-            except RateLimitError:
-                logger.error("Rate limit hit while fetching connections")
-                break
+            except RateLimitError as e:
+                logger.error(
+                    f"Rate limit hit while fetching {connection_type}. "
+                    f"Fetched {len(users)} users before rate limit. Data is incomplete!"
+                )
+                raise IncompleteDataError(
+                    f"Rate limit hit while fetching {connection_type}. "
+                    f"Only {len(users)} users fetched. Results would be inaccurate.",
+                    fetched_count=len(users),
+                    connection_type=connection_type,
+                ) from e
             except Exception as e:
-                logger.error(f"Error fetching connections: {e}")
-                break
+                logger.error(
+                    f"Error fetching {connection_type}: {e}. "
+                    f"Fetched {len(users)} users before error. Data may be incomplete!"
+                )
+                raise IncompleteDataError(
+                    f"Error while fetching {connection_type}: {e}. "
+                    f"Only {len(users)} users fetched. Results would be inaccurate.",
+                    fetched_count=len(users),
+                    connection_type=connection_type,
+                ) from e
 
         return users
 

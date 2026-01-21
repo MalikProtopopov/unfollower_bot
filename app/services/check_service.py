@@ -17,6 +17,7 @@ from app.services.admin_notification_service import (
 )
 from app.services.file_generator import generate_xlsx_report
 from app.services.instagram_scraper import (
+    IncompleteDataError,
     InstagramScraper,
     InstagramScraperError,
     PrivateAccountError,
@@ -349,6 +350,33 @@ async def process_check(check_id: str):
         await notify_check_completed(check_id)
         await notify_admin_check_error(user_id, username, target_username, check_id, "RateLimit", str(e))
 
+    except IncompleteDataError as e:
+        error_msg = (
+            f"Не удалось получить полные данные об аккаунте @{target_username}. "
+            "Instagram ограничил доступ во время сбора данных. Попробуйте позже."
+        )
+        logger.error(
+            f"Check {check_id} failed: Incomplete data - {e}. "
+            f"Fetched {e.fetched_count} {e.connection_type} before interruption. "
+            f"Check aborted to prevent inaccurate results."
+        )
+        await update_check_status(
+            check_id,
+            status=CheckStatusEnum.FAILED,
+            error_message=error_msg,
+        )
+        # Refund balance since check failed with incomplete data
+        await refund_check_balance(
+            user_id, 
+            f"IncompleteData: {e.connection_type} ({e.fetched_count} fetched)"
+        )
+        await notify_check_completed(check_id)
+        await notify_admin_check_error(
+            user_id, username, target_username, check_id, 
+            "IncompleteData", 
+            f"{e.connection_type}: fetched {e.fetched_count} before error"
+        )
+
     except SessionExpiredError as e:
         error_msg = "Ошибка авторизации Instagram. Мы уже работаем над решением проблемы."
         logger.error(
@@ -371,7 +399,7 @@ async def process_check(check_id: str):
         except Exception as refresh_err:
             logger.warning(f"Could not trigger reactive refresh task: {refresh_err}")
             # Fallback: notify admin manually
-            await notify_admin_session_error()
+        await notify_admin_session_error()
         
         logger.critical(
             f"Instagram session token expired! Reactive refresh triggered. "
