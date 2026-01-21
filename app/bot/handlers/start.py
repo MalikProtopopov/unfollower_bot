@@ -7,6 +7,8 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.http_client import APIError, api_post
 from app.bot.keyboards import get_back_button_keyboard, get_main_menu_keyboard
+from app.bot.utils import format_number
+from app.config import get_settings
 from app.utils.logger import logger
 
 router = Router()
@@ -151,7 +153,8 @@ async def show_main_menu(message: Message, user=None, edit: bool = False) -> Non
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     """Handle /help command."""
-    help_text = """
+    max_size = get_settings().max_account_size
+    help_text = f"""
 📖 <b>Справка по использованию бота</b>
 
 <b>Как проверить подписки:</b>
@@ -160,14 +163,14 @@ async def cmd_help(message: Message) -> None:
 3. Дождись завершения анализа
 4. Получи файл с результатами
 
-<b>Что показывает отчёт:</b>
-• Список всех ваших подписок
-• Кто из них подписан на вас взаимно
-• Кто НЕ подписан на вас (не взаимные)
+<b>Что показывает отчёт (3 листа в Excel):</b>
+• <b>Не взаимные</b> — кто НЕ подписан на вас
+• <b>Подписчики</b> — все ваши подписчики
+• <b>Подписки</b> — все ваши подписки
 
 <b>Ограничения:</b>
 • Работает только с публичными аккаунтами
-• Максимум 10 000 подписок/подписчиков
+• Максимум {format_number(max_size)} подписок/подписчиков
 
 <b>Команды:</b>
 /check — начать проверку

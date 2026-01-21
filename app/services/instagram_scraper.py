@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import httpx
 
+from app.config import get_settings
 from app.utils.logger import logger
 
 
@@ -365,19 +366,22 @@ class InstagramScraper:
     async def get_followers(
         self,
         username: str,
-        max_users: int = 10000,
+        max_users: int | None = None,
         on_progress: Callable | None = None,
     ) -> list[InstagramUser]:
         """Get user's followers.
 
         Args:
             username: Instagram username
-            max_users: Maximum followers to fetch
+            max_users: Maximum followers to fetch (default from settings)
             on_progress: Progress callback
 
         Returns:
             List of followers
         """
+        if max_users is None:
+            max_users = get_settings().max_account_size
+            
         user_info = await self.get_user_info(username)
 
         if user_info.is_private and not self.session_id:
@@ -396,19 +400,22 @@ class InstagramScraper:
     async def get_following(
         self,
         username: str,
-        max_users: int = 10000,
+        max_users: int | None = None,
         on_progress: Callable | None = None,
     ) -> list[InstagramUser]:
         """Get user's following list.
 
         Args:
             username: Instagram username
-            max_users: Maximum following to fetch
+            max_users: Maximum following to fetch (default from settings)
             on_progress: Progress callback
 
         Returns:
             List of following
         """
+        if max_users is None:
+            max_users = get_settings().max_account_size
+            
         user_info = await self.get_user_info(username)
 
         if user_info.is_private and not self.session_id:
@@ -427,20 +434,23 @@ class InstagramScraper:
     async def get_non_mutual_followers(
         self,
         username: str,
-        max_users: int = 10000,
+        max_users: int | None = None,
         on_progress: Callable | None = None,
     ) -> tuple[list[InstagramUser], list[InstagramUser], list[InstagramUser]]:
         """Get non-mutual followers analysis.
 
         Args:
             username: Instagram username
-            max_users: Maximum users to fetch per list
+            max_users: Maximum users to fetch per list (default from settings)
             on_progress: Progress callback (receives: progress%, stage)
 
         Returns:
             Tuple of (followers, following, non_mutual)
             non_mutual = people user follows but who don't follow back
         """
+        if max_users is None:
+            max_users = get_settings().max_account_size
+            
         # Get user info ONCE
         if on_progress:
             on_progress(5, "Getting user info...")

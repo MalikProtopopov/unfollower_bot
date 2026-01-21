@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     max_concurrent_checks: int = Field(default=1, alias="MAX_CONCURRENT_CHECKS")
     queue_processing_interval: int = Field(default=5, alias="QUEUE_PROCESSING_INTERVAL")
 
+    # Account limits for scraping
+    max_account_size: int = Field(default=50000, alias="MAX_ACCOUNT_SIZE")  # Max followers/following to fetch
+
     # Referrals
     referral_bonus_checks: int = Field(default=1, alias="REFERRAL_BONUS_CHECKS")
     referral_required_count: int = Field(default=10, alias="REFERRAL_REQUIRED_COUNT")

@@ -30,17 +30,16 @@ def create_styled_workbook(
         non_mutual: List of non-mutual users
 
     Returns:
-        Styled openpyxl Workbook
+        Styled openpyxl Workbook with 3 sheets:
+        1. Non-Mutual (first sheet - user sees immediately)
+        2. All Followers
+        3. All Following
     """
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Non-Mutual Analysis"
-
+    
     # Styles
     header_font = Font(bold=True, size=14, color="FFFFFF")
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    subheader_font = Font(bold=True, size=11)
-    subheader_fill = PatternFill(start_color="D6DCE5", end_color="D6DCE5", fill_type="solid")
     yes_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     no_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
     border = Border(
@@ -49,14 +48,24 @@ def create_styled_workbook(
         top=Side(style="thin"),
         bottom=Side(style="thin"),
     )
+    
+    # Calculate stats
+    mutual_count = len(following) - len(non_mutual)
+    mutual_percent = (mutual_count / len(following) * 100) if following else 0
 
-    # --- Header Section ---
-    ws.merge_cells("A1:G1")
-    ws["A1"] = f"Анализ взаимных подписок: @{target_username}"
+    # =====================================================
+    # SHEET 1: Non-Mutual (FIRST - user sees this first!)
+    # =====================================================
+    ws = wb.active
+    ws.title = "Не взаимные"
+
+    # Header
+    ws.merge_cells("A1:E1")
+    ws["A1"] = f"❌ Не взаимные подписки @{target_username}"
     ws["A1"].font = Font(bold=True, size=16)
     ws["A1"].alignment = Alignment(horizontal="center")
 
-    # Metadata
+    # Stats
     ws["A3"] = "Дата анализа:"
     ws["B3"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     ws["A4"] = "Всего подписчиков:"
@@ -66,156 +75,160 @@ def create_styled_workbook(
     ws["A6"] = "Не взаимных:"
     ws["B6"] = len(non_mutual)
     ws["A7"] = "Процент взаимности:"
-
-    mutual_count = len(following) - len(non_mutual)
-    mutual_percent = (mutual_count / len(following) * 100) if following else 0
     ws["B7"] = f"{mutual_percent:.1f}%"
-
+    
     for row in range(3, 8):
         ws[f"A{row}"].font = Font(bold=True)
 
-    # --- Data Table ---
-    table_start_row = 9
-
-    # Table headers
-    headers = ["#", "Username", "Имя", "Подписан на вас?", "Вы подписаны?", "Взаимно?", "Ссылка"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=table_start_row, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-
-    # Create followers and following sets for quick lookup
-    follower_usernames = {f.username.lower() for f in followers}
-    following_usernames = {f.username.lower() for f in following}
-
-    # Combine all users for complete picture
-    all_users = {}
-
-    # Add following users
-    for user in following:
-        all_users[user.username.lower()] = {
-            "username": user.username,
-            "full_name": user.full_name or "",
-            "user_follows": True,
-            "follows_user": user.username.lower() in follower_usernames,
-        }
-
-    # Add followers not in following
-    for user in followers:
-        if user.username.lower() not in all_users:
-            all_users[user.username.lower()] = {
-                "username": user.username,
-                "full_name": user.full_name or "",
-                "user_follows": False,
-                "follows_user": True,
-            }
-
-    # Sort: non-mutual first (user follows but not followed back)
-    sorted_users = sorted(
-        all_users.values(),
-        key=lambda x: (
-            x["follows_user"],  # Not followed back first
-            -x["user_follows"],  # User follows first
-            x["username"].lower(),
-        ),
-    )
-
-    # Write data rows
-    for idx, user_data in enumerate(sorted_users, 1):
-        row = table_start_row + idx
-        is_mutual = user_data["user_follows"] and user_data["follows_user"]
-
-        # Row number
-        cell = ws.cell(row=row, column=1, value=idx)
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-
-        # Username
-        cell = ws.cell(row=row, column=2, value=user_data["username"])
-        cell.border = border
-
-        # Full name
-        cell = ws.cell(row=row, column=3, value=user_data["full_name"])
-        cell.border = border
-
-        # Follows user (target follows this person)
-        follows_user_text = "✓" if user_data["follows_user"] else "✗"
-        cell = ws.cell(row=row, column=4, value=follows_user_text)
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-        cell.fill = yes_fill if user_data["follows_user"] else no_fill
-
-        # User follows (this person follows target)
-        user_follows_text = "✓" if user_data["user_follows"] else "✗"
-        cell = ws.cell(row=row, column=5, value=user_follows_text)
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-        cell.fill = yes_fill if user_data["user_follows"] else no_fill
-
-        # Mutual
-        mutual_text = "✓" if is_mutual else "✗"
-        cell = ws.cell(row=row, column=6, value=mutual_text)
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-        cell.fill = yes_fill if is_mutual else no_fill
-
-        # Instagram link
-        ig_url = f"https://instagram.com/{user_data['username']}"
-        cell = ws.cell(row=row, column=7, value="Открыть")
-        cell.hyperlink = ig_url
-        cell.font = Font(color="0563C1", underline="single")
-        cell.border = border
-        cell.alignment = Alignment(horizontal="center")
-
-    # Adjust column widths
-    ws.column_dimensions["A"].width = 6
-    ws.column_dimensions["B"].width = 25
-    ws.column_dimensions["C"].width = 30
-    ws.column_dimensions["D"].width = 18
-    ws.column_dimensions["E"].width = 16
-    ws.column_dimensions["F"].width = 12
-    ws.column_dimensions["G"].width = 12
-
-    # --- Non-Mutual Only Sheet ---
-    ws_non_mutual = wb.create_sheet(title="Non-Mutual Only")
-
-    # Header
-    ws_non_mutual.merge_cells("A1:D1")
-    ws_non_mutual["A1"] = f"Не взаимные подписки @{target_username}"
-    ws_non_mutual["A1"].font = Font(bold=True, size=14)
-
-    ws_non_mutual["A2"] = f"Вы подписаны на {len(non_mutual)} аккаунтов, которые не подписаны на вас"
-    ws_non_mutual["A2"].font = Font(italic=True, color="666666")
+    ws["A9"] = f"⚠️ Вы подписаны на {len(non_mutual)} аккаунтов, которые НЕ подписаны на вас"
+    ws["A9"].font = Font(bold=True, color="C00000")
 
     # Table headers
     nm_headers = ["#", "Username", "Имя", "Ссылка"]
     for col, header in enumerate(nm_headers, 1):
-        cell = ws_non_mutual.cell(row=4, column=col, value=header)
+        cell = ws.cell(row=11, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.border = border
+        cell.alignment = Alignment(horizontal="center")
 
-    # Data
+    # Data - non-mutual users
     for idx, user in enumerate(non_mutual, 1):
-        row = 4 + idx
-        ws_non_mutual.cell(row=row, column=1, value=idx).border = border
-        ws_non_mutual.cell(row=row, column=2, value=user.username).border = border
-        ws_non_mutual.cell(row=row, column=3, value=user.full_name or "").border = border
+        row = 11 + idx
+        ws.cell(row=row, column=1, value=idx).border = border
+        ws.cell(row=row, column=1).alignment = Alignment(horizontal="center")
+        ws.cell(row=row, column=2, value=user.username).border = border
+        ws.cell(row=row, column=3, value=user.full_name or "").border = border
         
-        # Instagram link
         ig_url = f"https://instagram.com/{user.username}"
-        cell = ws_non_mutual.cell(row=row, column=4, value="Открыть")
+        cell = ws.cell(row=row, column=4, value="Открыть")
         cell.hyperlink = ig_url
         cell.font = Font(color="0563C1", underline="single")
         cell.border = border
         cell.alignment = Alignment(horizontal="center")
 
-    ws_non_mutual.column_dimensions["A"].width = 6
-    ws_non_mutual.column_dimensions["B"].width = 25
-    ws_non_mutual.column_dimensions["D"].width = 12
-    ws_non_mutual.column_dimensions["C"].width = 30
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 25
+    ws.column_dimensions["C"].width = 30
+    ws.column_dimensions["D"].width = 12
+
+    # =====================================================
+    # SHEET 2: All Followers
+    # =====================================================
+    ws_followers = wb.create_sheet(title="Подписчики")
+
+    # Header
+    ws_followers.merge_cells("A1:E1")
+    ws_followers["A1"] = f"👥 Все подписчики @{target_username}"
+    ws_followers["A1"].font = Font(bold=True, size=16)
+    ws_followers["A1"].alignment = Alignment(horizontal="center")
+
+    ws_followers["A3"] = f"Всего подписчиков: {len(followers)}"
+    ws_followers["A3"].font = Font(bold=True)
+
+    # Table headers
+    followers_headers = ["#", "Username", "Имя", "Вы подписаны?", "Ссылка"]
+    for col, header in enumerate(followers_headers, 1):
+        cell = ws_followers.cell(row=5, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    # Create following set for lookup
+    following_usernames = {f.username.lower() for f in following}
+
+    # Data - followers sorted alphabetically
+    sorted_followers = sorted(followers, key=lambda x: x.username.lower())
+    for idx, user in enumerate(sorted_followers, 1):
+        row = 5 + idx
+        is_following_back = user.username.lower() in following_usernames
+        
+        ws_followers.cell(row=row, column=1, value=idx).border = border
+        ws_followers.cell(row=row, column=1).alignment = Alignment(horizontal="center")
+        ws_followers.cell(row=row, column=2, value=user.username).border = border
+        ws_followers.cell(row=row, column=3, value=user.full_name or "").border = border
+        
+        # "Вы подписаны?" column
+        follows_text = "✓" if is_following_back else "✗"
+        cell = ws_followers.cell(row=row, column=4, value=follows_text)
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+        cell.fill = yes_fill if is_following_back else no_fill
+        
+        ig_url = f"https://instagram.com/{user.username}"
+        cell = ws_followers.cell(row=row, column=5, value="Открыть")
+        cell.hyperlink = ig_url
+        cell.font = Font(color="0563C1", underline="single")
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    ws_followers.column_dimensions["A"].width = 6
+    ws_followers.column_dimensions["B"].width = 25
+    ws_followers.column_dimensions["C"].width = 30
+    ws_followers.column_dimensions["D"].width = 16
+    ws_followers.column_dimensions["E"].width = 12
+
+    # =====================================================
+    # SHEET 3: All Following
+    # =====================================================
+    ws_following = wb.create_sheet(title="Подписки")
+
+    # Header
+    ws_following.merge_cells("A1:E1")
+    ws_following["A1"] = f"📝 Все подписки @{target_username}"
+    ws_following["A1"].font = Font(bold=True, size=16)
+    ws_following["A1"].alignment = Alignment(horizontal="center")
+
+    ws_following["A3"] = f"Всего подписок: {len(following)}"
+    ws_following["A3"].font = Font(bold=True)
+
+    # Table headers
+    following_headers = ["#", "Username", "Имя", "Подписан на вас?", "Ссылка"]
+    for col, header in enumerate(following_headers, 1):
+        cell = ws_following.cell(row=5, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    # Create followers set for lookup
+    follower_usernames = {f.username.lower() for f in followers}
+
+    # Data - following sorted: non-mutual first, then alphabetically
+    sorted_following = sorted(
+        following, 
+        key=lambda x: (x.username.lower() in follower_usernames, x.username.lower())
+    )
+    
+    for idx, user in enumerate(sorted_following, 1):
+        row = 5 + idx
+        is_follower = user.username.lower() in follower_usernames
+        
+        ws_following.cell(row=row, column=1, value=idx).border = border
+        ws_following.cell(row=row, column=1).alignment = Alignment(horizontal="center")
+        ws_following.cell(row=row, column=2, value=user.username).border = border
+        ws_following.cell(row=row, column=3, value=user.full_name or "").border = border
+        
+        # "Подписан на вас?" column
+        follower_text = "✓" if is_follower else "✗"
+        cell = ws_following.cell(row=row, column=4, value=follower_text)
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+        cell.fill = yes_fill if is_follower else no_fill
+        
+        ig_url = f"https://instagram.com/{user.username}"
+        cell = ws_following.cell(row=row, column=5, value="Открыть")
+        cell.hyperlink = ig_url
+        cell.font = Font(color="0563C1", underline="single")
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    ws_following.column_dimensions["A"].width = 6
+    ws_following.column_dimensions["B"].width = 25
+    ws_following.column_dimensions["C"].width = 30
+    ws_following.column_dimensions["D"].width = 16
+    ws_following.column_dimensions["E"].width = 12
 
     return wb
 

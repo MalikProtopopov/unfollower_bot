@@ -354,7 +354,7 @@ class InstagramSession(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # New fields for auto-refresh
     next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
