@@ -147,6 +147,9 @@ class SessionRefreshService:
         page = await context.new_page()
         await self._add_stealth_scripts(page)
         
+        # Set default timeout for all page operations
+        page.set_default_timeout(self.page_timeout)
+        
         try:
             logger.info(f"Starting Playwright login for {username}")
             
