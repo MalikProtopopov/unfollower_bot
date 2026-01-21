@@ -10,9 +10,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
 import pyotp
-from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import async_playwright, Browser, Page, Playwright, TimeoutError as PlaywrightTimeout
 from sqlalchemy import select, update
 
+from app.config import get_settings
 from app.models.database import async_session_maker
 from app.models.models import InstagramSession, RefreshCredentials
 from app.services.encryption_service import decrypt_password, encrypt_password, EncryptionError
@@ -41,14 +42,6 @@ class SessionRefreshService:
     # Instagram URLs
     LOGIN_URL = "https://www.instagram.com/accounts/login/"
     HOME_URL = "https://www.instagram.com/"
-    
-    # Timeouts (in milliseconds)
-    PAGE_TIMEOUT = 30000
-    LOGIN_TIMEOUT = 15000
-    
-    # Refresh intervals
-    PROACTIVE_REFRESH_DAYS = 2  # Refresh every 2 days proactively
-    MAX_FAIL_COUNT = 3  # Max failures before disabling
 
     def __init__(self, headless: bool = True):
         """Initialize session refresh service.
@@ -57,13 +50,24 @@ class SessionRefreshService:
             headless: Run browser in headless mode.
         """
         self.headless = headless
+        self._playwright: Playwright | None = None
         self._browser: Browser | None = None
+        
+        # Load settings
+        settings = get_settings()
+        self.page_timeout = settings.session_page_timeout
+        self.login_timeout = settings.session_login_timeout
+        self.proactive_refresh_days = settings.session_refresh_days
+        self.max_fail_count = settings.session_max_fail_count
 
     async def _get_browser(self) -> Browser:
         """Get or create browser instance."""
         if self._browser is None or not self._browser.is_connected():
-            playwright = await async_playwright().start()
-            self._browser = await playwright.chromium.launch(
+            # Start playwright if not started
+            if self._playwright is None:
+                self._playwright = await async_playwright().start()
+            
+            self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 args=[
                     '--disable-blink-features=AutomationControlled',
@@ -75,10 +79,14 @@ class SessionRefreshService:
         return self._browser
 
     async def close(self):
-        """Close browser instance."""
+        """Close browser and playwright instances."""
         if self._browser and self._browser.is_connected():
             await self._browser.close()
             self._browser = None
+        
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
 
     async def _add_stealth_scripts(self, page: Page):
         """Add anti-detection scripts to page."""
@@ -143,7 +151,7 @@ class SessionRefreshService:
             logger.info(f"Starting Playwright login for {username}")
             
             # Navigate to login page
-            await page.goto(self.LOGIN_URL, wait_until='networkidle', timeout=self.PAGE_TIMEOUT)
+            await page.goto(self.LOGIN_URL, wait_until='networkidle', timeout=self.page_timeout)
             await self._random_delay(2, 4)
             
             # Accept cookies if dialog appears
@@ -202,7 +210,7 @@ class SessionRefreshService:
             
             # Wait for successful redirect to home page
             try:
-                await page.wait_for_url(f'{self.HOME_URL}**', timeout=self.LOGIN_TIMEOUT)
+                await page.wait_for_url(f'{self.HOME_URL}**', timeout=self.login_timeout)
                 logger.info("Successfully logged in to Instagram")
             except PlaywrightTimeout:
                 # Check for error messages
@@ -407,7 +415,7 @@ class SessionRefreshService:
         from app.services.session_service import save_session_id
         
         # Calculate next refresh time
-        next_refresh = datetime.now(timezone.utc) + timedelta(days=self.PROACTIVE_REFRESH_DAYS)
+        next_refresh = datetime.now(timezone.utc) + timedelta(days=self.proactive_refresh_days)
         
         # Save session
         ig_session = await save_session_id(session_id, notes="Auto-refreshed via Playwright")
@@ -483,7 +491,7 @@ class SessionRefreshService:
                 )
                 await session.commit()
                 
-                if new_fail_count >= self.MAX_FAIL_COUNT:
+                if new_fail_count >= self.max_fail_count:
                     logger.critical(
                         f"Session refresh failed {new_fail_count} times. "
                         f"Manual intervention required."
@@ -513,7 +521,7 @@ class SessionRefreshService:
             # If no next_refresh_at, check created_at
             if ig_session.created_at:
                 age = datetime.now(timezone.utc) - ig_session.created_at.replace(tzinfo=timezone.utc)
-                return age.days >= self.PROACTIVE_REFRESH_DAYS
+                return age.days >= self.proactive_refresh_days
             
             return False
 

@@ -25,6 +25,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Set Playwright browsers path BEFORE installing
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+
 # Install runtime dependencies + Playwright browser dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -53,8 +56,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Playwright browsers (as root before switching user)
-RUN playwright install chromium && \
+# Create playwright directory and install browsers
+RUN mkdir -p /app/.playwright && \
+    playwright install chromium && \
     playwright install-deps chromium || true
 
 # Copy application code
@@ -62,10 +66,7 @@ COPY --chown=appuser:appuser . .
 
 # Create directories for data and logs
 RUN mkdir -p /app/data/checks /app/logs && \
-    chown -R appuser:appuser /app/data /app/logs
-
-# Give appuser access to playwright browsers
-RUN chown -R appuser:appuser /root/.cache/ms-playwright 2>/dev/null || true
+    chown -R appuser:appuser /app/data /app/logs /app/.playwright
 
 # Switch to non-root user
 USER appuser

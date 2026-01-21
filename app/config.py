@@ -61,6 +61,22 @@ class Settings(BaseSettings):
     robokassa_password_2: str = Field(default="", alias="ROBOKASSA_PASSWORD_2")
     robokassa_test_mode: bool = Field(default=True, alias="ROBOKASSA_TEST_MODE")
 
+    # Session Auto-Refresh Settings
+    session_refresh_days: int = Field(default=2, alias="SESSION_REFRESH_DAYS")
+    session_max_fail_count: int = Field(default=3, alias="SESSION_MAX_FAIL_COUNT")
+    session_page_timeout: int = Field(default=30000, alias="SESSION_PAGE_TIMEOUT")  # ms
+    session_login_timeout: int = Field(default=15000, alias="SESSION_LOGIN_TIMEOUT")  # ms
+    proactive_check_hours: int = Field(default=6, alias="PROACTIVE_CHECK_HOURS")
+    health_check_hours: int = Field(default=1, alias="HEALTH_CHECK_HOURS")
+    
+    # Redis for TaskIQ
+    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    use_redis: bool = Field(default=False, alias="USE_REDIS")
+    
+    # Encryption
+    encryption_key: str = Field(default="", alias="ENCRYPTION_KEY")
+    secret_key: str = Field(default="change-me-in-production", alias="SECRET_KEY")
+
     @property
     def upload_dir_path(self) -> Path:
         """Get upload directory as Path object."""

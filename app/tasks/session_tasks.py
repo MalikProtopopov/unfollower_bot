@@ -9,7 +9,7 @@ Tasks:
 from datetime import datetime, timezone
 
 from app.tasks.broker import broker
-from app.services.session_refresh_service import get_refresh_service, SessionRefreshService
+from app.services.session_refresh_service import get_refresh_service
 from app.services.session_service import get_active_session_id, validate_session_id
 from app.services.admin_notification_service import notify_admin_session_error
 from app.utils.logger import logger

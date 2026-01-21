@@ -59,9 +59,11 @@ services:
       - ROBOKASSA_PASSWORD_1=${ROBOKASSA_PASSWORD_1:-}
       - ROBOKASSA_PASSWORD_2=${ROBOKASSA_PASSWORD_2:-}
       - ROBOKASSA_TEST_MODE=${ROBOKASSA_TEST_MODE:-True}
+      # Session auto-refresh
       - REDIS_URL=redis://redis:6379/0
       - USE_REDIS=${USE_REDIS:-false}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
     depends_on:
       db:
         condition: service_healthy
@@ -84,6 +86,8 @@ services:
       - DEBUG=${DEBUG:-True}
       - BOT_USERNAME=${BOT_USERNAME:-}
       - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
     depends_on:
       - app
       - db
@@ -109,15 +113,18 @@ services:
       - DEBUG=${DEBUG:-True}
       - MAX_CONCURRENT_CHECKS=${MAX_CONCURRENT_CHECKS:-1}
       - QUEUE_PROCESSING_INTERVAL=${QUEUE_PROCESSING_INTERVAL:-5}
+      # Session auto-refresh
       - REDIS_URL=redis://redis:6379/0
       - USE_REDIS=${USE_REDIS:-false}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
     depends_on:
       - app
       - db
       - redis
     restart: unless-stopped
 
+  # TaskIQ worker for background session refresh tasks
   taskiq-worker:
     build:
       context: .
@@ -133,10 +140,19 @@ services:
       - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN:-}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
       - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+      - INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID:-}
       - REDIS_URL=redis://redis:6379/0
-      - USE_REDIS=${USE_REDIS:-true}
+      - USE_REDIS=true
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEBUG=${DEBUG:-True}
+      # Session refresh settings
+      - SESSION_REFRESH_DAYS=${SESSION_REFRESH_DAYS:-2}
+      - SESSION_MAX_FAIL_COUNT=${SESSION_MAX_FAIL_COUNT:-3}
+      - SESSION_PAGE_TIMEOUT=${SESSION_PAGE_TIMEOUT:-30000}
+      - SESSION_LOGIN_TIMEOUT=${SESSION_LOGIN_TIMEOUT:-15000}
+      - PROACTIVE_CHECK_HOURS=${PROACTIVE_CHECK_HOURS:-6}
+      - HEALTH_CHECK_HOURS=${HEALTH_CHECK_HOURS:-1}
     depends_on:
       - db
       - redis
@@ -144,6 +160,7 @@ services:
     profiles:
       - auto-refresh
 
+  # TaskIQ scheduler for periodic session refresh
   taskiq-scheduler:
     build:
       context: .
@@ -159,10 +176,19 @@ services:
       - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN:-}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
       - MANAGER_USERNAME=${MANAGER_USERNAME:-issue_resolver}
+      - INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID:-}
       - REDIS_URL=redis://redis:6379/0
-      - USE_REDIS=${USE_REDIS:-true}
+      - USE_REDIS=true
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEBUG=${DEBUG:-True}
+      # Session refresh settings
+      - SESSION_REFRESH_DAYS=${SESSION_REFRESH_DAYS:-2}
+      - SESSION_MAX_FAIL_COUNT=${SESSION_MAX_FAIL_COUNT:-3}
+      - SESSION_PAGE_TIMEOUT=${SESSION_PAGE_TIMEOUT:-30000}
+      - SESSION_LOGIN_TIMEOUT=${SESSION_LOGIN_TIMEOUT:-15000}
+      - PROACTIVE_CHECK_HOURS=${PROACTIVE_CHECK_HOURS:-6}
+      - HEALTH_CHECK_HOURS=${HEALTH_CHECK_HOURS:-1}
     depends_on:
       - db
       - redis

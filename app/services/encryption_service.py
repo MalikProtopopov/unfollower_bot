@@ -5,13 +5,13 @@ sensitive data like Instagram passwords.
 """
 
 import base64
-import os
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from app.config import get_settings
 from app.utils.logger import logger
 
 
@@ -28,14 +28,14 @@ class EncryptionService:
         
         Args:
             secret_key: Secret key for encryption. If not provided,
-                       uses ENCRYPTION_KEY environment variable.
+                       uses ENCRYPTION_KEY from settings.
         """
-        self._secret_key = secret_key or os.getenv("ENCRYPTION_KEY")
+        settings = get_settings()
+        self._secret_key = secret_key or settings.encryption_key
         
         if not self._secret_key:
             # Generate a warning but don't fail - generate a key from app secret
-            app_secret = os.getenv("SECRET_KEY", "default-secret-key-change-me")
-            self._secret_key = app_secret
+            self._secret_key = settings.secret_key
             logger.warning(
                 "ENCRYPTION_KEY not set, using derived key from SECRET_KEY. "
                 "Set ENCRYPTION_KEY in production for better security."
